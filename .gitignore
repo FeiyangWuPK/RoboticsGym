@@ -1,0 +1,11 @@
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/inspectionProfiles/Project_Default.xml
+/.idea/.gitignore
+/.idea/jupyter-settings.xml
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/other.xml
+/.idea/RoboticsGym.iml
+/.idea/vcs.xml
+/logs/best_model.zip
+/logs/evaluations.npz
