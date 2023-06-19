@@ -8,16 +8,16 @@ import gymnasium as gym
 from gymnasium.envs.registration import register
 from stable_baselines3.common.callbacks import EvalCallback
 
-register(id='Cassie-v1',
-		entry_point='mj_cassie:CassieEnv',
+register(id='Digit-v1',
+		entry_point='digit:DigitEnv',
 		max_episode_steps=1000,
 		autoreset=True,)
 
 if __name__ == "__main__":
 	# Create the environment
-	env = Monitor(gym.make("Cassie-v1", render_mode="human"))
+	env = Monitor(gym.make("Digit-v1", render_mode="human"))
 	# Separate evaluation env
-	eval_env = Monitor(gym.make("Cassie-v1"))
+	eval_env = Monitor(gym.make("Digit-v1"))
 	# Use deterministic actions for evaluation
 	eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
 								log_path="./logs/", eval_freq=500,
