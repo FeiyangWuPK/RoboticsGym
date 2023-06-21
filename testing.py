@@ -30,7 +30,7 @@ from typing import Callable
 
 
 def load_best_and_visualize():
-	env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': True, 'render_mode': 'human'})
+	env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
 	model = SAC("MlpPolicy",
 				env,
 				verbose=0,
@@ -39,7 +39,7 @@ def load_best_and_visualize():
 	evaluate_policy(model, env, render=True, n_eval_episodes=10)
 	
 def visualize_reference_traj():
-	env = make_vec_env("CassieViz-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': True, 'render_mode': 'human'})
+	env = make_vec_env("CassieViz-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
 	model = SAC("MlpPolicy",
 				env,
 				verbose=0,
@@ -47,16 +47,16 @@ def visualize_reference_traj():
 	evaluate_policy(model, env, render=True, n_eval_episodes=10)
 
 if __name__ == "__main__":
-	train = False
+	train = True
 	if train:
 		# Create the environment
 		env = make_vec_env("Cassie-v1", n_envs=20, env_kwargs={'exclude_current_positions_from_observation': False})
 		# Separate evaluation env
-		eval_env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False})
+		eval_env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
 		# Use deterministic actions for evaluation
 		eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
 									log_path="./logs/", eval_freq=10000,
-									deterministic=True, render=False)
+									deterministic=True, render=True)
 		# Init model
 		model = SAC("MlpPolicy",
 					env,

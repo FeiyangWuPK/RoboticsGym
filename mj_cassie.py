@@ -78,10 +78,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         initial_qpos, initial_qvel = self.ref_trajectory.state(0)
 
-        if exclude_current_positions_from_observation:
-            self.set_state(initial_qpos, initial_qvel)
-        else:
-            self.set_state(initial_qpos[1:], initial_qvel)
+        self.set_state(initial_qpos[:-1], initial_qvel)
         
 
     @property

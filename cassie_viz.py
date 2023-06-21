@@ -80,11 +80,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         self.initial_qpos = initial_qpos
         self.initial_qvel = initial_qvel
-
-        if exclude_current_positions_from_observation:
-            self.set_state(initial_qpos[1:], initial_qvel)
-        else:
-            self.set_state(initial_qpos[1:], initial_qvel)
+        self.set_state(initial_qpos[:-1], initial_qvel)
         
 
     @property
@@ -138,7 +134,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
 
         xy_position_before = mass_center(self.model, self.data)
-        self.do_simulation(ref_torque, self.frame_skip)
+        # self.do_simulation(action, self.frame_skip)
         xy_position_after = mass_center(self.model, self.data)
         # Transition happens here so time + 1
         self.timestamp += 1
@@ -204,7 +200,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             self.render()
         print(self.model.nq, self.model.nv)
         print(ref_qpos.shape, ref_qvel.shape)
-        self.set_state(ref_qpos[1:], ref_qvel)
+        self.set_state(ref_qpos[:-1], ref_qvel)
         observation = self._get_obs()
         reward = 1
 
