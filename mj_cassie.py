@@ -78,7 +78,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         initial_qpos, initial_qvel = self.ref_trajectory.state(0)
 
-        self.set_state(initial_qpos[:-1], initial_qvel)
+        self.set_state(initial_qpos, initial_qvel)
         
 
     @property

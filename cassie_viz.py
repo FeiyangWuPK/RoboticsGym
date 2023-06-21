@@ -80,7 +80,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         self.initial_qpos = initial_qpos
         self.initial_qvel = initial_qvel
-        self.set_state(initial_qpos[:-1], initial_qvel)
+        self.set_state(initial_qpos, initial_qvel)
         
 
     @property
@@ -200,7 +200,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             self.render()
         print(self.model.nq, self.model.nv)
         print(ref_qpos.shape, ref_qvel.shape)
-        self.set_state(ref_qpos[:-1], ref_qvel)
+        self.set_state(ref_qpos, ref_qvel)
         observation = self._get_obs()
         reward = 1
 

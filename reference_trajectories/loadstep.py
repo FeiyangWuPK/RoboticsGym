@@ -31,7 +31,7 @@ class CassieTrajectory:
         u = Data[2].transpose()
         self.num_data = q.shape[0]
         
-        self.qpos = np.zeros((self.num_data, 36))
+        self.qpos = np.zeros((self.num_data, 35))
         self.qpos[:, 0:3] = q[:, 0:3]
         self.qpos[:, 3:7] = np.tile(np.array([1, 0, 0, 0]), (self.num_data,1))
         self.qpos[:, 7:10] = q[:, 6:9]
@@ -82,7 +82,7 @@ class CassieTrajectory:
         self.time_interpolated = self.interpolate_time(target_size=target_data_size)
         self.num_data_interpolated = self.time_interpolated.shape[0]
         
-        self.qpos = np.zeros((self.num_data, 36))
+        self.qpos = np.zeros((self.num_data, 35))
         self.qpos[:, 0:3] = data[:, 5:8]
         self.qpos[:, 3:7] = data[:, 1:5]
         self.qpos[:, 7:10] = data[:, 8:11]
