@@ -78,8 +78,11 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         initial_qpos, initial_qvel = self.ref_trajectory.state(0)
 
+        self.initial_qpos = initial_qpos
+        self.initial_qvel = initial_qvel
+
         if exclude_current_positions_from_observation:
-            self.set_state(initial_qpos, initial_qvel)
+            self.set_state(initial_qpos[1:], initial_qvel)
         else:
             self.set_state(initial_qpos[1:], initial_qvel)
         
@@ -132,8 +135,10 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         )
 
     def step(self, action):
+        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
+
         xy_position_before = mass_center(self.model, self.data)
-        self.do_simulation(action, self.frame_skip)
+        self.do_simulation(ref_torque, self.frame_skip)
         xy_position_after = mass_center(self.model, self.data)
         # Transition happens here so time + 1
         self.timestamp += 1
@@ -159,7 +164,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         current_pelvis_ori = self.data.qpos[3:7]
         current_joint_pos = self.data.qpos[joint_idx]
         
-        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
+        
 
         # the following imitation reward design is from Zhaoming's 2023 paper https://zhaomingxie.github.io/projects/Opt-Mimic/opt-mimic.pdf
         sigmas = [0.05, 0.14, 0.3, 0.35, 3]
@@ -197,6 +202,11 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         if self.render_mode == "human":
             self.render()
+        print(self.model.nq, self.model.nv)
+        print(ref_qpos.shape, ref_qvel.shape)
+        self.set_state(ref_qpos[1:], ref_qvel)
+        observation = self._get_obs()
+        reward = 1
 
         return observation, reward, terminated, False, info
 
