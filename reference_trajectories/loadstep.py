@@ -30,13 +30,16 @@ class CassieTrajectory:
         
         self.qpos = np.zeros((self.num_data, 35))
         self.qpos[:, 0:3] = q[:, 0:3]
+        self.qpos[:, 2] += np.ones(self.num_data) * 0.15
         self.qpos[:, 3:7] = np.tile(np.array([1, 0, 0, 0]), (self.num_data,1))
         self.qpos[:, 7:10] = q[:, 6:9]
         self.qpos[:, 14:17] = q[:, 9:12]
         self.qpos[:, 20] = q[:, 12]
+        self.qpos[:, 18] = self.qpos[:, 20] # Crank angle equals foot.
         self.qpos[:, 21:24] = q[:, 13:16]
         self.qpos[:, 28:31] = q[:, 16:19]
         self.qpos[:, 34] = q[:, 19]
+        self.qpos[:, 32] = self.qpos[:, 34]
         
         self.qvel = np.zeros((self.num_data, 32))
         self.qvel[:, 0:3] = dq[:, 0:3]

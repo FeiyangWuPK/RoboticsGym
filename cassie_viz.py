@@ -134,12 +134,18 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp)
         ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
         
-        zero_action = np.zeros(10)
         
         xy_position_before = mass_center(self.model, self.data)
+        
+        zero_action = np.zeros(10)
+        self.do_simulation(zero_action, self.frame_skip)
+        position = self.data.qpos.flat.copy()
+        rod_index = [10, 11, 12, 13, 17, 18, 19, 24, 25, 26, 27, 31, 32, 33]
+        ref_qpos[rod_index] = position[rod_index]
         self.set_state(ref_qpos, ref_qvel)
-        # self.do_simulation(zero_action, self.frame_skip)
+        
         xy_position_after = mass_center(self.model, self.data)
+        
         # Transition happens here so time + 1
         self.timestamp += 1
 
