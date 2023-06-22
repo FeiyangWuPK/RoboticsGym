@@ -6,20 +6,17 @@ import math
 class CassieTrajectory:
     def __init__(self, filepath):
         self.read_mat(filepath)
-        self.time = np.arange(self.num_data)
 
     def state(self, t):
-        tmax = self.time[-1]
-        i = int((t % tmax) / tmax * len(self.time))
+        i = int(t % self.num_data)
         return (self.qpos[i], self.qvel[i])
 
     def action(self, t):
-        tmax = self.time[-1]
-        i = int((t % tmax) / tmax * len(self.time))
+        i = int(t % self.num_data)
         return (self.mpos[i], self.mvel[i], self.torque[i])
 
     def sample(self):
-        i = random.randrange(len(self.time))
+        i = random.randrange(self.num_data)
         return (self.time[i], self.qpos[i], self.qvel[i])
     
     def read_mat(self, filepath):

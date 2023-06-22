@@ -78,9 +78,9 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         initial_qpos, initial_qvel = self.ref_trajectory.state(0)
 
-        self.initial_qpos = initial_qpos
-        self.initial_qvel = initial_qvel
-        self.set_state(initial_qpos, initial_qvel)
+        self.init_qpos = initial_qpos
+        self.init_qvel = initial_qvel
+        self.reset()
         
 
     @property
@@ -131,10 +131,14 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         )
 
     def step(self, action):
-        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
-
+        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp)
+        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
+        
+        zero_action = np.zeros(10)
+        
         xy_position_before = mass_center(self.model, self.data)
-        # self.do_simulation(action, self.frame_skip)
+        self.set_state(ref_qpos, ref_qvel)
+        # self.do_simulation(zero_action, self.frame_skip)
         xy_position_after = mass_center(self.model, self.data)
         # Transition happens here so time + 1
         self.timestamp += 1
@@ -151,7 +155,6 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         joint_idx = [15, 16, 20, 29, 30, 34]
         # if frameskip = 5, we don't need to multiply 6
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp * self.frame_skip)
         ref_pelvis_pos = ref_qpos[0:3]
         ref_pelvis_ori = ref_qpos[3:7]
         ref_joint_pos = ref_qpos[joint_idx]
@@ -198,9 +201,9 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         if self.render_mode == "human":
             self.render()
-        print(self.model.nq, self.model.nv)
-        print(ref_qpos.shape, ref_qvel.shape)
-        self.set_state(ref_qpos, ref_qvel)
+        # print(self.model.nq, self.model.nv)
+        # print(ref_qpos.shape, ref_qvel.shape)
+        
         observation = self._get_obs()
         reward = 1
 
@@ -217,7 +220,8 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             low=noise_low, high=noise_high, size=self.model.nv
         )
         self.set_state(qpos, qvel)
-
+        self.timestamp = 0
+        
         observation = self._get_obs()
         return observation
 
