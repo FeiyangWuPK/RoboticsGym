@@ -5,6 +5,8 @@ from gymnasium import utils
 from gymnasium.spaces import Box
 import mujoco
 
+from reference_trajectories.loadDigit import DigitTrajectory
+
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
     "distance": 4.0,
@@ -69,8 +71,14 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
-        print(self.action_space.shape)
+        # print(self.action_space.shape)
+        self.ref_trajectory = DigitTrajectory("reference_trajectories/digit_state.csv")
+        
+        # initial_qpos, initial_qvel = self.ref_trajectory.state(0)
 
+        # self.init_qpos = initial_qpos
+        # self.init_qvel = initial_qvel
+        
         self.reset_model()
 
     @property
@@ -122,7 +130,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action):
         xy_position_before = mass_center(self.model, self.data)
-        self.do_simulation(action, self.frame_skip)
+        self.do_simulation(np.zeros(20), self.frame_skip)
         xy_position_after = mass_center(self.model, self.data)
 
         xy_velocity = (xy_position_after - xy_position_before) / self.dt
