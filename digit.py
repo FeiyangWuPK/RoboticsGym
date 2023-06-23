@@ -72,12 +72,12 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             **kwargs,
         )
         # print(self.action_space.shape)
-        self.ref_trajectory = DigitTrajectory("reference_trajectories/digit_state.csv")
+        self.ref_trajectory = DigitTrajectory("reference_trajectories/digit_state_downsample.csv")
         
-        # initial_qpos, initial_qvel = self.ref_trajectory.state(0)
+        initial_qpos, initial_qvel = self.ref_trajectory.state(0)
 
-        # self.init_qpos = initial_qpos
-        # self.init_qvel = initial_qvel
+        self.init_qpos = initial_qpos
+        self.init_qvel = initial_qvel
         
         self.reset_model()
 
@@ -129,8 +129,18 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
 
     def step(self, action):
+        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
+        self.timestamp += 1
+        
         xy_position_before = mass_center(self.model, self.data)
+        
         self.do_simulation(np.zeros(20), self.frame_skip)
+        position = self.data.qpos.flat.copy()
+        rod_index = [10,11,12,13, 19,20,21,22, 24,25,26,27, 
+                     37,38,39,40, 46,47,48,49, 51,52,53,54]
+        ref_qpos[rod_index] = position[rod_index]
+        self.set_state(ref_qpos, ref_qvel)
+        
         xy_position_after = mass_center(self.model, self.data)
 
         xy_velocity = (xy_position_after - xy_position_before) / self.dt
@@ -174,6 +184,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
         self.set_state(qpos, qvel)
 
+        self.timestamp = 0
         observation = self._get_obs()
         return observation
 
