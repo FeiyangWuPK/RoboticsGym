@@ -44,7 +44,7 @@ class DigitTrajectory:
         
         self.qpos = np.zeros((self.num_data, self.dim_qpos))
         self.qpos[:, 0:3] = base_position[:, 0:3]
-        self.qpos[:, 2] += np.ones(self.num_data) * 1.05 # Add a constant height.
+        self.qpos[:, 2] += np.ones(self.num_data) * 1.06 # Add a constant height.
         self.qpos[:, 3:7] = np.tile(np.array([1, 0, 0, 0]), (self.num_data,1))
         
         self.qpos[:, 7:10] = position_full[:, 0:3]

@@ -65,7 +65,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         MujocoEnv.__init__(
             self,
-            os.getcwd()+"/digit.xml",
+            os.getcwd()+"/digit-v3.xml",
             5,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
