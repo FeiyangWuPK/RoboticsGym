@@ -59,7 +59,7 @@
     <joint solreflimit='0.001 1' />
   </default>
   <worldbody>
-    <geom name='ground' type='plane' size='0 0 1' conaffinity='127' condim='3' friction='0.7 0.01 0.005' pos='0 0 0' priority='100' />
+    <!-- <geom name='ground' type='plane' size='0 0 1' conaffinity='127' condim='3' friction='0.7 0.01 0.005' pos='0 0 0' priority='100' /> -->
     <body name='torso/base' pos='0 0 0' euler='-0 0 -0'>
       <inertial pos='0.001636612541 0.0002001180789 0.2593064529' mass='15.028392' fullinertia='0.3759052548 0.3441935 0.09873232746 -8.776732849e-05 0.008498611229 6.621611757e-05' />
       <joint type='free' limited='false'/>
