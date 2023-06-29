@@ -50,9 +50,9 @@ if __name__ == "__main__":
 	train = True
 	if train:
 		# Create the environment
-		env = make_vec_env("Cassie-v1", n_envs=10, env_kwargs={'exclude_current_positions_from_observation': False})
+		env = make_vec_env("Cassie-v1", n_envs=16, env_kwargs={'exclude_current_positions_from_observation': False})
 		# Separate evaluation env
-		eval_env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
+		eval_env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False})
 		# Use deterministic actions for evaluation
 		eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
 									log_path="./logs/", eval_freq=1000,
@@ -60,11 +60,13 @@ if __name__ == "__main__":
 		# Init model
 		model = SAC("MlpPolicy",
 					env,
+					buffer_size=200000,
 					verbose=1,
+					ent_coef=0.01,
 					learning_rate=5e-3,)
 
 		# Train the agent
-		model.learn(total_timesteps=3e6,
+		model.learn(total_timesteps=6e6,
 					log_interval=100,
 					progress_bar=True,
 					callback=eval_callback)
