@@ -13,17 +13,17 @@ from stable_baselines3.common.callbacks import EvalCallback
 
 register(id='Digit-v1',
 		entry_point='digit:DigitEnv',
-		max_episode_steps=1000,
+		max_episode_steps=600,
 		autoreset=True,)
 
 register(id='Cassie-v1',
-		entry_point='mj_cassie:CassieEnv',
-		max_episode_steps=1000,
+		entry_point='cassie:CassieEnv',
+		max_episode_steps=600,
 		autoreset=True,)
 
 register(id='CassieViz-v1',
 		entry_point='cassie_viz:CassieEnv',
-		max_episode_steps=1000,
+		max_episode_steps=600,
 		autoreset=True,)
 
 from typing import Callable
@@ -50,22 +50,22 @@ if __name__ == "__main__":
 	train = True
 	if train:
 		# Create the environment
-		env = make_vec_env("Cassie-v1", n_envs=20, env_kwargs={'exclude_current_positions_from_observation': False})
+		env = make_vec_env("Cassie-v1", n_envs=10, env_kwargs={'exclude_current_positions_from_observation': False})
 		# Separate evaluation env
 		eval_env = make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
 		# Use deterministic actions for evaluation
 		eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
-									log_path="./logs/", eval_freq=10000,
-									deterministic=True, render=True)
+									log_path="./logs/", eval_freq=1000,
+									deterministic=True, render=False)
 		# Init model
 		model = SAC("MlpPolicy",
 					env,
-					verbose=0,
-					learning_rate=1e-3,)
+					verbose=1,
+					learning_rate=5e-3,)
 
 		# Train the agent
-		model.learn(total_timesteps=1e6,
-					log_interval=1,
+		model.learn(total_timesteps=3e6,
+					log_interval=100,
 					progress_bar=True,
 					callback=eval_callback)
 	else:
