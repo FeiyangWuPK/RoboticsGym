@@ -1,6 +1,6 @@
 <!-- Cassie simulation model developed by the Dynamic Robotics Laboratory -->
 <mujoco model='cassie'>
-  <compiler inertiafromgeom='auto' angle='degree' eulerseq='zyx' meshdir='./assets/cassie'/>
+  <compiler inertiafromgeom='true' angle='degree' eulerseq='zyx' meshdir='./assets/cassie'/>
   <size nuser_actuator='1' nuser_sensor='1' nuser_geom='1'/>
   <option timestep='0.0005' iterations='50' solver='PGS' gravity='0 0 -9.81'/>
   <!-- Timestep is set to 0.0005 because our controller runs at 2 kHz -->

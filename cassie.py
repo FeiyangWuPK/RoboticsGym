@@ -5,7 +5,10 @@ from gymnasium import utils
 from gymnasium.spaces import Box
 import mujoco
 
+# from cassie_m.cassiemujoco import CassieSim, CassieVis
+
 from reference_trajectories.loadstep import CassieTrajectory
+
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
@@ -37,7 +40,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             ctrl_cost_weight=0.1,
             healthy_reward=5.0,
             terminate_when_unhealthy=True,
-            healthy_z_range=(0.7, 2.0),
+            healthy_z_range=(0.8, 2.0),
             reset_noise_scale=1e-3,
             exclude_current_positions_from_observation=True,
             **kwargs,
@@ -62,28 +65,46 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             observation_space = Box(
                 low=-np.inf, high=np.inf, shape=(671,), dtype=np.float64
             )
-        self.frameskip = 30
+        self.frame_skip = 30
         MujocoEnv.__init__(
             self,
-            os.getcwd()+"/scene.xml",
-            self.frameskip,
+            os.getcwd()+"/cassie.xml",
+            self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
-        
+
         self.ref_trajectory = CassieTrajectory("reference_trajectories/cassie_walk/cassie_walking_from_stand.mat")
 
-        self.timestamp = 65
+        self.timestamp = 0
+        
+        self._update_init_qpos()
+        
+        # print(f'final x pos {self.data.qpos[0]}, {self.ref_trajectory.qpos[0, 0]}')
 
-        initial_qpos, initial_qvel = self.ref_trajectory.state(self.timestamp * self.frame_skip)
-        self.init_qpos = initial_qpos
-        self.init_qpos = np.array( [0.7168356984991782, 0.21534483766233287, 0.9323887592900508, 0.9999999264974779, -0.0002901375476954636, 0.00013202243630762556, -0.0002130617714944957, -0.03982478079625715, 0.0211525159580161, 0.7244190781589216, 0.017052475696354544, 0.9520544633328609, -0.30403324295240536, -0.02941596676036783, -1.358681181241618, -0.02049076550104647, 1.6329803035030004, -0.011073575029023954, -1.7530196679331227, 1.733781197099566, -1.856552584933119, 0.006832282644159905, -0.017280732532940272, 0.3852306316070201, -0.7984661397509015, -0.5377991945089965, 0.167180037668535, 0.21277848824990653, -1.2837415386581086, -0.07751563423636267, 1.6674075108118946, -0.0368339493559848, -1.5389410762823728, 1.5204427500858477, -1.5628833194785936]) #the 65 * 5 = 325th frame of the reference trajectory
-        self.init_qvel = initial_qvel
-        self.init_qvel = np.array([0.6747320619641718, 0.2090707285249807, -0.24060797483179508, -0.2880849285279525, 0.15982699851591325, -0.12528982482833495, 0.2019895410859575, -0.12011558661951015, -2.1371205058577534, -0.001973926630127514, -3.3500663038668734, 0.046384842673533475, 3.139542496927967, -2.1174284387437474, 2.0149343418219177, -2.3090546279018462, 1.4157711330477927, -1.2307522395721413, -2.1584881615936338, 0.10720791732915282, -0.22555645280024142, 0.3715655385517533, 0.004758047645511424, 0.6633032592511838, -0.23061693624232485, -2.407799781121452, 3.4704447285585016, -1.8825803940069632, -0.4085142325556717, 1.0250941030366612, -0.9983749965592585, 0.029746922964266793])
-        # self.reset()
+        # self.sim = CassieSim(os.getcwd()+"/cassie.xml")
+        # self.visual = True
+        # if self.visual:
+        #     self.vis = CassieVis(self.sim)
+        # self.vis.draw(self.sim)
+
+    def _update_init_qpos(self):
+        # handcrafted init qpos
+        qpos_init_cassiemujoco = np.array([0, 0, 1.01, 1, 0, 0, 0,
+            0.0045, 0, 0.4973, 0.9785, -0.0164, 0.01787, -0.2049,
+            -1.1997, 0, 1.4267, 0, -1.5244, 1.5244, -1.5968,
+            -0.0045, 0, 0.4973, 0.9786, 0.00386, -0.01524, -0.2051,
+            -1.1997, 0, 1.4267, 0, -1.5244, 1.5244, -1.5968])
+        self.init_qpos = qpos_init_cassiemujoco
+
+        # self.init_qpos = self.ref_trajectory.qpos[0]
+        # self.do_simulation(np.zeros(0), 1)
+        self.init_qpos = np.array([0.04529737116916673, -0.15300356752917388, 0.9710095501646747, 1.0, 0.0, 0.0, 0.0, 0.04516039439535328, 0.0007669903939428207, 0.48967542963286953, 0.5366660119008494, -0.5459706642036749, 0.13716932320803393, 0.6285620114754674, -1.3017744461194523, -0.03886484136807136, 1.606101853366077, -0.7079960941663008, -1.786147490968169, 0.3175519006511133, -1.683487349162938, -0.04519107401111099, -0.0007669903939428207, 0.4898192403317338, 0.38803053590372555, -0.25971548696569596, 0.49875340077344466, -0.7302227155144948, -1.3018703199186952, -0.038780951793733864, 1.606065900691361, 0.49858954295641644, -1.6206843700546072, 0.12408356187240471, -1.6835283352121144])
+        self.init_qvel = self.ref_trajectory.qvel[0]
+        # self.set_state(self.init_qpos, self.init_qvel)
         self.reset()
-
+        
     @property
     def healthy_reward(self):
         return (
@@ -132,6 +153,38 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         )
 
     def step(self, action):
+        # xy_position_before = mass_center(self.model, self.data)
+        # self.do_simulation(action, self.frame_skip)
+        # xy_position_after = mass_center(self.model, self.data)
+
+        # xy_velocity = (xy_position_after - xy_position_before) / self.dt
+        # x_velocity, y_velocity = xy_velocity
+
+        # ctrl_cost = self.control_cost(action)
+
+        # forward_reward = self._forward_reward_weight * x_velocity
+        # healthy_reward = self.healthy_reward
+
+        # rewards = forward_reward + healthy_reward
+
+        # observation = self._get_obs()
+        # reward = rewards - ctrl_cost
+        # terminated = self.terminated
+        # info = {
+        #     "reward_linvel": forward_reward,
+        #     "reward_quadctrl": -ctrl_cost,
+        #     "reward_alive": healthy_reward,
+        #     "x_position": xy_position_after[0],
+        #     "y_position": xy_position_after[1],
+        #     "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
+        #     "x_velocity": x_velocity,
+        #     "y_velocity": y_velocity,
+        #     "forward_reward": forward_reward,
+        # }
+
+        # if self.render_mode == "human":
+        #     self.render()
+        # return observation, reward, terminated, False, info
         xy_position_before = mass_center(self.model, self.data)
         self.do_simulation(action, self.frame_skip)
         xy_position_after = mass_center(self.model, self.data)
@@ -184,7 +237,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 + reward_weights[3] * r_3 + reward_weights[4] * r_4 #+ 0.3 * r_5
         # total_reward = -np.linalg.norm(self.data.qpos - ref_qpos[:-1])-np.linalg.norm(action-ref_torque)
-        # total_reward = np.exp(-np.linalg.norm(self.data.qpos - ref_qpos)) + np.exp(-np.linalg.norm(action-ref_torque))
+        total_reward = np.exp(-np.linalg.norm(self.data.qpos - ref_qpos)) + np.exp(-np.linalg.norm(action-ref_torque))
         
         observation = self._get_obs()
         reward = total_reward 
@@ -229,6 +282,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             low=noise_low, high=noise_high, size=self.model.nv
         )
         self.set_state(qpos, qvel)
+        self.timestamp = 0
 
         observation = self._get_obs()
         return observation

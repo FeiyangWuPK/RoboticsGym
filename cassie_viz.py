@@ -72,7 +72,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             **kwargs,
         )
 
-        self.ref_trajectory = CassieTrajectory("reference_trajectories/cassie_walk/cassie_walking.mat")
+        self.ref_trajectory = CassieTrajectory("reference_trajectories/cassie_walk/cassie_walking_from_stand.mat")
 
         self.timestamp = 0
 
@@ -140,12 +140,11 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         zero_action = np.zeros(10)
         self.do_simulation(zero_action, self.frame_skip)
         position = self.data.qpos.flat.copy()
-        print(self.timestamp, list(position), list(self.data.qvel.flat.copy()))
         rod_index = [10, 11, 12, 13, 17, 18, 19, 24, 25, 26, 27, 31, 32, 33]
         ref_qpos[rod_index] = position[rod_index]
-        # print(self.timestamp, list(ref_qpos))
-        input()
+        # print(list(ref_qpos))
         self.set_state(ref_qpos, ref_qvel)
+        # input()
         
         xy_position_after = mass_center(self.model, self.data)
         
