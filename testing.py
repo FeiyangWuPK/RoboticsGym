@@ -6,6 +6,7 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecNormalize
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.env_checker import check_env
 
 import gymnasium as gym
 from gymnasium.envs.registration import register
@@ -34,6 +35,9 @@ register(id='OldCassie-v1',
 		entry_point='oldcassie:OldCassieMirrorEnv',
 		max_episode_steps=600,
 		autoreset=True,)
+
+env = gym.make('OldCassie-v1')
+check_env(env, warn=True)
 
 from typing import Callable
 
@@ -110,11 +114,13 @@ def train_model():
 	run.finish()
 
 if __name__ == "__main__":
-	train = False
-	if train:
-		train_model()
-	else:
-		# load_best_and_visualize()
-		# visualize_reference_traj()
-		# visualize_init_stance()
+	# train = True
+	# if train:
+	# 	train_model()
+	# else:
+	# 	# load_best_and_visualize()
+	# 	# visualize_reference_traj()
+	# 	visualize_reference_traj()
+	env = gym.make('OldCassie-v1')
+	check_env(env, warn=True)
 		
