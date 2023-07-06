@@ -1,0 +1,161 @@
+diff --git a/cassie_viz.py b/cassie_viz.py
+index 037254b..a6fc43b 100644
+--- a/cassie_viz.py
++++ b/cassie_viz.py
+@@ -131,14 +131,14 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
+         )
+ 
+     def step(self, action):
+-        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp)
+-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
++        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
++        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp * self.frame_skip)
+         
+         
+         xy_position_before = mass_center(self.model, self.data)
+         
+         zero_action = np.zeros(10)
+-        self.do_simulation(zero_action, self.frame_skip)
++        self.do_simulation(zero_action, 1)
+         position = self.data.qpos.flat.copy()
+         rod_index = [10, 11, 12, 13, 17, 18, 19, 24, 25, 26, 27, 31, 32, 33]
+         ref_qpos[rod_index] = position[rod_index]
+diff --git a/mj_cassie.xml b/mj_cassie.xml
+index f07483e..64cb7d1 100644
+--- a/mj_cassie.xml
++++ b/mj_cassie.xml
+@@ -1,7 +1,7 @@
+ <mujoco model="cassie">
+   <compiler eulerseq="zyx" meshdir="assets/mj_cassie" texturedir="./assets/mj_cassie" autolimits="true"/>
+ 
+-  <option timestep="0.0005" solver="PGS" integrator="RK4" iterations="50"  />
++  <option timestep="0.0005" solver="PGS" integrator="RK4" iterations="50" gravity="0 0 -9.806" />
+   <!-- Timestep is set to 0.0005 because the standard Cassie controller runs at 2 kHz -->
+   <!-- Larger values still have stable dynamics -->
+ 
+diff --git a/old_cassie/cassie_env/cassieRLEnv.py b/old_cassie/cassie_env/cassieRLEnv.py
+index 7599799..84de004 100644
+--- a/old_cassie/cassie_env/cassieRLEnv.py
++++ b/old_cassie/cassie_env/cassieRLEnv.py
+@@ -218,7 +218,7 @@ class cassieRLEnv:
+ 
+ class cassieRLEnvDelay(cassieRLEnv):
+ 	def __init__(self,visual):
+-		self.model = "old_cassie/cassie_m/model/0cassie.xml"
++		self.model = "mj_cassie.xml"
+ 		self.sim = CassieSim(self.model)
+ 		self.visual = visual
+ 		if self.visual:
+diff --git a/oldcassie.py b/oldcassie.py
+index 35e7ff5..2560c18 100644
+--- a/oldcassie.py
++++ b/oldcassie.py
+@@ -52,7 +52,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
+                 low=-np.inf, high=np.inf, shape=(self._get_obs().shape[0],), dtype=np.float64
+             )
+         
+-        self.action_space = Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float64)
++        self.action_space = Box(low=-1, high=1, shape=(10,), dtype=np.float32)
+ 
+     def reset(self, seed=None, options=None):
+         self.env.reset()
+diff --git a/testing.py b/testing.py
+index 5f9424a..c138d9b 100644
+--- a/testing.py
++++ b/testing.py
+@@ -21,7 +21,7 @@ register(id='Digit-v1',
+ 		autoreset=True,)
+ 
+ register(id='Cassie-v1',
+-		entry_point='cassie:CassieEnv',
++		entry_point='mj_cassie:CassieEnv',
+ 		max_episode_steps=1000,
+ 		autoreset=True,)
+ 
+@@ -55,7 +55,6 @@ def load_best_and_visualize():
+                 replay_buffer=best_irl_model.replay_buffer,
+                 log_interval=1,)
+ 	
+-	
+ def visualize_reference_traj():
+ 	env = make_vec_env("CassieViz-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
+ 	model = SAC("MlpPolicy",
+@@ -67,15 +66,19 @@ def visualize_reference_traj():
+ def train_model():
+ 	config = {
+ 		"policy_type": "MlpPolicy",
+-		"total_timesteps": int(1e7),
++		"total_timesteps": int(3e6),
+ 		"env_id": "Cassie-v1",
+ 		"progress_bar": True,
+ 		"verbose": 1,
+ 		"learning_rate": 3e-4,
+ 		"n_envs": 8,
++		"ent_coef": 0.1,
++		"gamma": 0.99,
++		"batch_size": 256,
++
+ 	}
+ 	run = wandb.init(
+-		project="sb3",
++		project="New Cassie Testing",
+ 		config=config,
+ 		sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+ 		monitor_gym=True,  # auto-upload the videos of agents playing the game
+@@ -85,20 +88,26 @@ def train_model():
+ 			model_save_path=f"models/{run.id}",
+ 			model_save_freq=10000,
+ 			gradient_save_freq=10000,
+-			verbose=2,
++			verbose=1,
+ 		)
+ 	env = make_vec_env(config['env_id'], n_envs=config['n_envs'],)
+ 	# Separate evaluation env
+ 	eval_env = make_vec_env(config['env_id'], n_envs=1,)
+ 	# Use deterministic actions for evaluation
+-	eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
+-									log_path="./logs/", eval_freq=10000,
+-									deterministic=True, render=False)
++	eval_callback = EvalCallback(
++								eval_env, 
++								best_model_save_path="./logs/",
++				  				log_path="./logs/", eval_freq=5000,
++				  				deterministic=True, 
++								render=False
++								)
++	
+ 	callback_list = CallbackList([eval_callback, wandbcallback])
+ 	# Init model
+ 	model = SAC("MlpPolicy",
+ 				env,
+ 				verbose=config["verbose"],
++				ent_coef=config["ent_coef"],
+ 				learning_rate=config['learning_rate'],)
+ 	
+ 	model.learn(
+@@ -110,11 +119,11 @@ def train_model():
+ 	run.finish()
+ 
+ if __name__ == "__main__":
+-	train = False
++	train = True
+ 	if train:
+ 		train_model()
+ 	else:
+ 		# load_best_and_visualize()
+-		# visualize_reference_traj()
++		visualize_reference_traj()
+ 		# visualize_init_stance()
+-		
+\ No newline at end of file
++		pass
+\ No newline at end of file
+diff --git a/wandb/latest-run b/wandb/latest-run
+index aa69826..5947c40 120000
+--- a/wandb/latest-run
++++ b/wandb/latest-run
+@@ -1 +1 @@
+-run-20230702_212624-72ii2jgj
+\ No newline at end of file
++run-20230703_193435-jou07c9r
+\ No newline at end of file

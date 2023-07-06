@@ -28,9 +28,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 67,
         "render_fps": 400,
-        "render_fps": 67,
     }
 
     def __init__(
@@ -64,29 +62,31 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             observation_space = Box(
                 low=-np.inf, high=np.inf, shape=(671,), dtype=np.float64
             )
-        self.frame_skip = 30
-
-        self.frame_skip = 30
+        self.frame_skip = 5
         MujocoEnv.__init__(
             self,
             os.getcwd()+"/scene.xml",
-            self.frame_skip,
-            5,
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
 
-        self.ref_trajectory = CassieTrajectory("reference_trajectories/cassie_walk/cassie_walking.mat")
+        # self.ref_trajectory = CassieTrajectory("reference_trajectories/cassie_walk/cassie_walking.mat")
         # print(self.ref_trajectory.time.shape)
         # exit()
         # print(self.ref_trajectory.time.shape)
         # exit()
+        self.ref_qpos = np.load('reference_trajectories/cassie_walk/old_cassie_reference_qpos_list.npy')
+        self.ref_qvel = np.load('reference_trajectories/cassie_walk/old_cassie_reference_qvel_list.npy')
+        print(self.ref_qpos.shape)
 
         self.timestamp = 0
 
-        initial_qpos, initial_qvel = self.ref_trajectory.state(0)
+        # initial_qpos, initial_qvel = self.ref_trajectory.state(0)
+        self.init_qpos = self.ref_qpos[0]
+        self.init_qvel = self.ref_qvel[0]
+        self.reset_model()
         
 
     @property
@@ -159,7 +159,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         joint_idx = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
         
         # if frameskip = 5, we don't need to multiply 6
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp * self.frame_skip)
+        ref_qpos, ref_qvel = self.ref_qpos[self.timestamp], self.ref_qvel[self.timestamp]
         ref_pelvis_pos = ref_qpos[0:3]
         ref_pelvis_ori = ref_qpos[3:7]
         ref_joint_pos = ref_qpos[joint_idx]
@@ -171,48 +171,32 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
 
         # the following imitation reward design is from Zhaoming's 2023 paper https://zhaomingxie.github.io/projects/Opt-Mimic/opt-mimic.pdf
+        # sigmas = [0.05, 0.05, 0.3, 0.35, 0.3]
         sigmas = [1, 1, 1, 1, 1]
         reward_weights = [0.3, 0.3, 0.2, 0.1, 0.1] 
 
         # reward for pelvis position difference
-        r_0 = np.exp(- (np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2) )/ (2 * sigmas[0] ) ) * 1e1
-        r_0 = np.exp(- (np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2) ** 2 )/ (2 * sigmas[0]) )
-        r_0 = np.exp(- (np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2) )/ (2 * sigmas[0] ) ) * 1e1
+        r_0 = np.exp(- (np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2) **2 )/ (2 * sigmas[0] **2 ) ) 
         # reward for pelvis orientation difference
-        r_1 = np.exp(- (np.linalg.norm(ref_pelvis_ori - current_pelvis_ori, ord=2) ) / (2 * sigmas[1] ) ) * 1e1
-        r_1 = np.exp(- (np.linalg.norm(ref_pelvis_ori - current_pelvis_ori, ord=2) ** 2) / (2 * sigmas[1]) )
-        r_1 = np.exp(- (np.linalg.norm(ref_pelvis_ori - current_pelvis_ori, ord=2) ) / (2 * sigmas[1] ) ) * 1e1
+        r_1 = np.exp(- (np.linalg.norm(ref_pelvis_ori - current_pelvis_ori, ord=2) **2) / (2 * sigmas[1] **2 ) ) 
         # reward for joint position difference
-        r_2 = np.exp(-(np.linalg.norm(ref_joint_pos - current_joint_pos, ord=2) ) / (2 * sigmas[2] ) ) * 1e1
-        r_2 = np.exp(-(np.linalg.norm(ref_joint_pos - current_joint_pos, ord=2) ** 2) / (2 * sigmas[2]) )
-        r_2 = np.exp(-(np.linalg.norm(ref_joint_pos - current_joint_pos, ord=2) ) / (2 * sigmas[2] ) ) * 1e1
+        r_2 = np.exp(-(np.linalg.norm(ref_joint_pos - current_joint_pos, ord=2) **2) / (2 * sigmas[2] **2 ) ) 
         # reward for action difference
-        r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ) / (2 * sigmas[3] ) ) * 1e1
-        r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ** 2) / (2 * sigmas[3]) )
-        r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ) / (2 * sigmas[3] ) ) * 1e1
+        r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ) / (2 * sigmas[3] ) ) 
         # reward for maximum action difference
         current_max_action = np.max(np.abs(action))
         ref_max_action = np.max(np.abs(ref_torque))
-        r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) ) / (2 * sigmas[4]) ) * 1e1
-
-        r_5 = np.exp(-(np.linalg.norm(ref_qvel - self.data.qvel, ord=2) ) / (2 * 1 ) ) * 1e1 # + np.exp(-(np.linalg.norm(ref_qpos[:-1] - self.data.qpos))) * 1e1
-        r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) ** 2) / (2 * sigmas[4]) )
-        r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) ) / (2 * sigmas[4]) ) * 1e1
+        r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) **2) / (2 * sigmas[4] **2) ) 
 
         r_5 = np.exp(-(np.linalg.norm(ref_qvel - self.data.qvel, ord=2) ) / (2 * 1 ) ) * 1e1 # + np.exp(-(np.linalg.norm(ref_qpos[:-1] - self.data.qpos))) * 1e1
 
-        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 + reward_weights[3] * r_3 + reward_weights[4] * r_4 #+ 0.3 * r_5
+        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 + reward_weights[3] * r_3 + reward_weights[4] * r_4 
         # total_reward = -np.linalg.norm(self.data.qpos - ref_qpos[:-1])-np.linalg.norm(action-ref_torque)
-        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 + reward_weights[3] * r_3 + reward_weights[4] * r_4
-        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 + reward_weights[3] * r_3 + reward_weights[4] * r_4 #+ 0.3 * r_5
-        # total_reward = -np.linalg.norm(self.data.qpos - ref_qpos[:-1])-np.linalg.norm(action-ref_torque)
+        # total_reward = np.exp(-np.linalg.norm(self.data.qpos - ref_qpos)) + np.exp(-np.linalg.norm(action-ref_torque))
         
         observation = self._get_obs()
         reward = total_reward 
-        # reward = forward_reward + healthy_reward - ctrl_cost
-        reward = total_reward + forward_reward + healthy_reward - ctrl_cost
-        reward = total_reward 
-        # reward = forward_reward + healthy_reward - ctrl_cost
+        
         terminated = self.terminated
         info = {
             "reward_linvel": forward_reward,

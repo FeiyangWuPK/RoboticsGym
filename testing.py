@@ -26,6 +26,11 @@ register(id='Cassie-v1',
 		max_episode_steps=1000,
 		autoreset=True,)
 
+register(id='MjCassie-v1',
+		entry_point='mj_cassie:CassieEnv',
+		max_episode_steps=600,
+		autoreset=True,)
+
 register(id='CassieViz-v1',
 		entry_point='cassie_viz:CassieEnv',
 		max_episode_steps=1000,
@@ -71,12 +76,12 @@ def visualize_reference_traj():
 def train_model():
 	config = {
 		"policy_type": "MlpPolicy",
-		"total_timesteps": int(1e7),
-		"env_id": "Cassie-v1",
+		"total_timesteps": int(3e6),
+		"env_id": "MjCassie-v1",
 		"progress_bar": True,
 		"verbose": 1,
-		"learning_rate": 3e-4,
-		"n_envs": 8,
+		"learning_rate": 5e-3,
+		"n_envs": 16,
 	}
 	run = wandb.init(
 		project="sb3",
@@ -91,9 +96,9 @@ def train_model():
 			gradient_save_freq=10000,
 			verbose=2,
 		)
-	env = make_vec_env(config['env_id'], n_envs=config['n_envs'],)
+	env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': True})
 	# Separate evaluation env
-	eval_env = make_vec_env(config['env_id'], n_envs=1,)
+	eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': True, 'render_mode': 'human'})
 	# Use deterministic actions for evaluation
 	eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
 									log_path="./logs/", eval_freq=10000,
@@ -114,13 +119,5 @@ def train_model():
 	run.finish()
 
 if __name__ == "__main__":
-	# train = True
-	# if train:
-	# 	train_model()
-	# else:
-	# 	# load_best_and_visualize()
-	# 	# visualize_reference_traj()
-	# 	visualize_reference_traj()
-	env = gym.make('OldCassie-v1')
-	check_env(env, warn=True)
+	train_model()
 		

@@ -1,0 +1,59 @@
+wandb_version: 1
+
+policy_type:
+  desc: null
+  value: MlpPolicy
+total_timesteps:
+  desc: null
+  value: 3000000
+env_id:
+  desc: null
+  value: Cassie-v1
+progress_bar:
+  desc: null
+  value: true
+verbose:
+  desc: null
+  value: 1
+learning_rate:
+  desc: null
+  value: 0.0003
+n_envs:
+  desc: null
+  value: 8
+ent_coef:
+  desc: null
+  value: 0.1
+gamma:
+  desc: null
+  value: 0.99
+batch_size:
+  desc: null
+  value: 256
+_wandb:
+  desc: null
+  value:
+    code_path: code/testing.py
+    python_version: 3.10.0
+    cli_version: 0.15.4
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1688427275.948847
+    t:
+      1:
+      - 1
+      - 55
+      2:
+      - 1
+      - 55
+      3:
+      - 16
+      - 22
+      - 23
+      - 35
+      4: 3.10.0
+      5: 0.15.4
+      8:
+      - 4
+      - 5
