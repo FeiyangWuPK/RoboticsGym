@@ -31,7 +31,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 67,
+        "render_fps": 36,
     }
 
     def __init__(
@@ -65,7 +65,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             observation_space = Box(
                 low=-np.inf, high=np.inf, shape=(671,), dtype=np.float64
             )
-        self.frame_skip = 30
+        self.frame_skip = 60
         MujocoEnv.__init__(
             self,
             os.getcwd()+"/cassie.xml",

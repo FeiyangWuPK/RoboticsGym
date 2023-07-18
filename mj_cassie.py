@@ -28,7 +28,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 400,
+        "render_fps": 33,
     }
 
     def __init__(
@@ -37,7 +37,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             ctrl_cost_weight=0.1,
             healthy_reward=5.0,
             terminate_when_unhealthy=True,
-            healthy_z_range=(0.6, 1.0),
+            healthy_z_range=(0.5, 2.0),
             reset_noise_scale=1e-3,
             exclude_current_positions_from_observation=True,
             **kwargs,
@@ -62,7 +62,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             observation_space = Box(
                 low=-np.inf, high=np.inf, shape=(671,), dtype=np.float64
             )
-        self.frame_skip = 5
+        self.frame_skip = 60
         MujocoEnv.__init__(
             self,
             os.getcwd()+"/scene.xml",
@@ -79,7 +79,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         # exit()
         self.ref_qpos = np.load('reference_trajectories/cassie_walk/old_cassie_reference_qpos_list.npy')
         self.ref_qvel = np.load('reference_trajectories/cassie_walk/old_cassie_reference_qvel_list.npy')
-        print(self.ref_qpos.shape)
+        # print(self.ref_qpos.shape)
 
         self.timestamp = 0
 
@@ -137,12 +137,13 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         )
 
     def step(self, action):
+        self.timestamp += 1
+        ref_qpos, ref_qvel = self.ref_qpos[self.timestamp], self.ref_qvel[self.timestamp]
         xy_position_before = mass_center(self.model, self.data)
         self.do_simulation(action, self.frame_skip)
         xy_position_after = mass_center(self.model, self.data)
         # Transition happens here so time + 1
-        self.timestamp += 1
-
+        
         xy_velocity = (xy_position_after - xy_position_before) / self.dt
         x_velocity, y_velocity = xy_velocity
 
@@ -157,9 +158,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         
         joint_idx = [15, 16, 20, 29, 30, 34]
         joint_idx = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
-        
-        # if frameskip = 5, we don't need to multiply 6
-        ref_qpos, ref_qvel = self.ref_qpos[self.timestamp], self.ref_qvel[self.timestamp]
+                
         ref_pelvis_pos = ref_qpos[0:3]
         ref_pelvis_ori = ref_qpos[3:7]
         ref_joint_pos = ref_qpos[joint_idx]
@@ -167,30 +166,28 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         current_pelvis_pos = self.data.qpos[0:3]
         current_pelvis_ori = self.data.qpos[3:7]
         current_joint_pos = self.data.qpos[joint_idx]
-        
-        ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp * self.frame_skip)
 
         # the following imitation reward design is from Zhaoming's 2023 paper https://zhaomingxie.github.io/projects/Opt-Mimic/opt-mimic.pdf
         # sigmas = [0.05, 0.05, 0.3, 0.35, 0.3]
         sigmas = [1, 1, 1, 1, 1]
-        reward_weights = [0.3, 0.3, 0.2, 0.1, 0.1] 
+        reward_weights = [0.4, 0.4, 0.2, 0.1, 0.1] 
 
         # reward for pelvis position difference
-        r_0 = np.exp(- (np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2) **2 )/ (2 * sigmas[0] **2 ) ) 
+        r_0 = np.exp(- np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2)) 
         # reward for pelvis orientation difference
-        r_1 = np.exp(- (np.linalg.norm(ref_pelvis_ori - current_pelvis_ori, ord=2) **2) / (2 * sigmas[1] **2 ) ) 
+        r_1 = np.exp(- np.linalg.norm(ref_pelvis_ori - current_pelvis_ori, ord=2)) 
         # reward for joint position difference
-        r_2 = np.exp(-(np.linalg.norm(ref_joint_pos - current_joint_pos, ord=2) **2) / (2 * sigmas[2] **2 ) ) 
-        # reward for action difference
-        r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ) / (2 * sigmas[3] ) ) 
-        # reward for maximum action difference
-        current_max_action = np.max(np.abs(action))
-        ref_max_action = np.max(np.abs(ref_torque))
-        r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) **2) / (2 * sigmas[4] **2) ) 
+        r_2 = np.exp(- np.linalg.norm(ref_joint_pos - current_joint_pos, ord=2)) 
+        # # reward for action difference
+        # r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ) / (2 * sigmas[3] ) ) 
+        # # reward for maximum action difference
+        # current_max_action = np.max(np.abs(action))
+        # ref_max_action = np.max(np.abs(ref_torque))
+        # r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) **2) / (2 * sigmas[4] **2) ) 
 
         r_5 = np.exp(-(np.linalg.norm(ref_qvel - self.data.qvel, ord=2) ) / (2 * 1 ) ) * 1e1 # + np.exp(-(np.linalg.norm(ref_qpos[:-1] - self.data.qpos))) * 1e1
 
-        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 + reward_weights[3] * r_3 + reward_weights[4] * r_4 
+        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 # + reward_weights[3] * r_3 + reward_weights[4] * r_4 
         # total_reward = -np.linalg.norm(self.data.qpos - ref_qpos[:-1])-np.linalg.norm(action-ref_torque)
         # total_reward = np.exp(-np.linalg.norm(self.data.qpos - ref_qpos)) + np.exp(-np.linalg.norm(action-ref_torque))
         
@@ -213,14 +210,6 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
 
-        # print(ref_qpos[:3], current_pelvis_pos[:3])
-        # print(reward)
-        # if terminated:
-        #     print('final x pos', xy_position_after[0])
-        # print(ref_qpos[:3], current_pelvis_pos[:3])
-        # print(reward)
-        # if terminated:
-        #     print('final x pos', xy_position_after[0])
         return observation, reward, terminated, False, info
 
     def reset_model(self):
@@ -236,6 +225,8 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         self.set_state(qpos, qvel)
 
         observation = self._get_obs()
+        self.timestamp = 0
+
         return observation
 
     def viewer_setup(self):
