@@ -64,14 +64,14 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
     return func
 
 def load_best_and_visualize():
-	env = VecNormalize(make_vec_env("Cassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'}))
+	env = make_vec_env("MjCassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
 	best_irl_model = SAC("MlpPolicy",
 				env,
 				verbose=1,
 				learning_rate=1e-3,
-				train_freq=1000)
-	best_irl_model.set_parameters("/home/feiyang/Develop/Cassie/arm-cassie/arm_cassie_env/logs/SAC/2023_06_26_23_53_46/best_model/best_model.zip")
-	_, callback = best_irl_model._setup_learn(100000, callback=None, )
+				train_freq=600)
+	best_irl_model.set_parameters("logs/best_model.zip")
+	_, callback = best_irl_model._setup_learn(600, callback=None, )
 	best_irl_model.collect_rollouts(best_irl_model.env,
                 train_freq=best_irl_model.train_freq,
                 action_noise=best_irl_model.action_noise,
@@ -92,25 +92,26 @@ def visualize_reference_traj():
 def train_model():
 	config = {
 		"policy_type": "MlpPolicy",	
-		"total_timesteps": int(5e6),
+		"total_timesteps": int(1e7),
 		"env_id": "MjCassie-v1",
 		"progress_bar": True,
 		"verbose": 0,
 		"learning_rate": linear_schedule(5e-3),
-		"n_envs": 48,
+		"n_envs": 16,
 	}
 	run = wandb.init(
 		project="New cassie env",
 		config=config,
 		name=f'{time.strftime("%Y-%m-%d-%H-%M-%S")}',
 		sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-		monitor_gym=True,  # auto-upload the videos of agents playing the game
+		# monitor_gym=True,  # auto-upload the videos of agents playing the game
 		save_code=True,  # optional
 	)
+	wandb.run.log_code(".")
 	wandbcallback = WandbCallback(
-			model_save_path=f"models/{run.id}",
-			model_save_freq=2000,
-			gradient_save_freq=2000,
+			# model_save_path=f"models/{run.id}",
+			# model_save_freq=2000,
+			# gradient_save_freq=2000,
 			verbose=2,
 		)
 	env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': False, })
@@ -118,14 +119,14 @@ def train_model():
 	eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': False, })
 	# Use deterministic actions for evaluation
 	eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
-									log_path="./logs/", eval_freq=2000,
+									log_path="./logs/", eval_freq=5000,
 									deterministic=True, render=False)
 	callback_list = CallbackList([eval_callback, wandbcallback])
 	# Init model
 	model = SAC("MlpPolicy",
 				env,
 				verbose=config["verbose"],
-				ent_coef=0.01,
+				# ent_coef=0.01,
 				learning_rate=config['learning_rate'],
 				tensorboard_log=f'logs/tensorboard/{run.name}/',)
 	
@@ -138,5 +139,6 @@ def train_model():
 	run.finish()
 
 if __name__ == "__main__":
-	train_model()
+	# train_model()
+	load_best_and_visualize()
 		

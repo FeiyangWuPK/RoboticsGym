@@ -56,11 +56,11 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         if exclude_current_positions_from_observation:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(669,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(69,), dtype=np.float64
             )
         else:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(671,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(67,), dtype=np.float64
             )
         self.frame_skip = 60
         MujocoEnv.__init__(
@@ -129,12 +129,12 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             (
                 position,
                 velocity,
-                com_inertia,
-                com_velocity,
-                actuator_forces,
-                external_contact_forces,
+                # com_inertia,
+                # com_velocity,
+                # actuator_forces,
+                # external_contact_forces,
             )
-        )
+        ).ravel()
 
     def step(self, action):
         self.timestamp += 1
@@ -158,6 +158,9 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         
         joint_idx = [15, 16, 20, 29, 30, 34]
         joint_idx = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
+
+        pos_index = np.array([1,2,3,4,5,6,7,8,9,14,15,16,20,21,22,23,28,29,30,34])
+        vel_index = np.array([0,1,2,3,4,5,6,7,8,12,13,14,18,19,20,21,25,26,27,31])
                 
         ref_pelvis_pos = ref_qpos[0:3]
         ref_pelvis_ori = ref_qpos[3:7]
@@ -170,7 +173,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         # the following imitation reward design is from Zhaoming's 2023 paper https://zhaomingxie.github.io/projects/Opt-Mimic/opt-mimic.pdf
         # sigmas = [0.05, 0.05, 0.3, 0.35, 0.3]
         sigmas = [1, 1, 1, 1, 1]
-        reward_weights = [0.4, 0.4, 0.2, 0.1, 0.1] 
+        reward_weights = [0.35, 0.35, 0.2, 0.1, 0.1] 
 
         # reward for pelvis position difference
         r_0 = np.exp(- np.linalg.norm(ref_pelvis_pos - current_pelvis_pos, ord=2)) 
@@ -185,9 +188,18 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         # ref_max_action = np.max(np.abs(ref_torque))
         # r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) **2) / (2 * sigmas[4] **2) ) 
 
-        r_5 = np.exp(-(np.linalg.norm(ref_qvel - self.data.qvel, ord=2) ) / (2 * 1 ) ) * 1e1 # + np.exp(-(np.linalg.norm(ref_qpos[:-1] - self.data.qpos))) * 1e1
+        r_5 = np.exp(-(np.linalg.norm(ref_qvel[vel_index] - self.data.qvel[vel_index], ord=2) ) / (2 * 1 ) ) * 1e1 # + np.exp(-(np.linalg.norm(ref_qpos[:-1] - self.data.qpos))) * 1e1
 
-        total_reward = reward_weights[0] * r_0 + reward_weights[1] * r_1 + reward_weights[2] * r_2 # + reward_weights[3] * r_3 + reward_weights[4] * r_4 
+        total_qpos_reward = np.exp(-np.linalg.norm(self.data.qpos[pos_index] - ref_qpos[pos_index], ord=2))
+
+        total_reward = 0.1  * r_0 
+        total_reward+= 0.1  * r_1 
+        total_reward+= 0.15 * r_2 
+        total_reward+= 0.15 * r_5
+        total_reward+= 0.3  * total_qpos_reward
+        total_reward+= 0.1  * forward_reward
+        total_reward-= 0.1  * ctrl_cost
+        # + reward_weights[3] * r_3 + reward_weights[4] * r_4 
         # total_reward = -np.linalg.norm(self.data.qpos - ref_qpos[:-1])-np.linalg.norm(action-ref_torque)
         # total_reward = np.exp(-np.linalg.norm(self.data.qpos - ref_qpos)) + np.exp(-np.linalg.norm(action-ref_torque))
         
