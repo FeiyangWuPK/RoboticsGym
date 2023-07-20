@@ -1,6 +1,6 @@
 import os
 import time
-from stable_baselines3 import SAC, PPO
+# from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
@@ -14,6 +14,8 @@ from stable_baselines3.common.callbacks import EvalCallback, CallbackList
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
+from sbx import SAC
+
 # from arm_cassie_env.cassie_env.cassieRLEnvMirror import CassieRLEnvMirror
 
 # register(id='Digit-v1',
@@ -26,7 +28,7 @@ register(id='Cassie-v1',
 		max_episode_steps=600,
 		autoreset=True,)
 
-register(id='MjCassie-v1',
+register(id='MjCassie-v2',
 		entry_point='mj_cassie:CassieEnv',
 		max_episode_steps=600,
 		autoreset=True,)
@@ -93,16 +95,16 @@ def train_model():
 	config = {
 		"policy_type": "MlpPolicy",	
 		"total_timesteps": int(1e7),
-		"env_id": "MjCassie-v1",
+		"env_id": "MjCassie-v2",
 		"progress_bar": True,
 		"verbose": 0,
 		"learning_rate": linear_schedule(5e-3),
-		"n_envs": 16,
+		"n_envs": 12,
 	}
 	run = wandb.init(
 		project="New cassie env",
 		config=config,
-		name=f'{time.strftime("%Y-%m-%d-%H-%M-%S")}',
+		name=f'{time.strftime("%Y-%m-%d-%H-%M-%S")}-PDController',
 		sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
 		# monitor_gym=True,  # auto-upload the videos of agents playing the game
 		save_code=True,  # optional
@@ -139,6 +141,6 @@ def train_model():
 	run.finish()
 
 if __name__ == "__main__":
-	# train_model()
-	load_best_and_visualize()
+	train_model()
+	# load_best_and_visualize()
 		
