@@ -136,11 +136,31 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             )
         ).ravel()
 
+    def PD(self, p_desired):
+        # PD gain from old cassie env.
+        kp = np.array([100, 100, 88, 96, 50, 100, 100, 88, 96, 50])
+        kd = np.array([10.0, 10.0, 8.0, 9.6, 5.0, 10.0, 10.0, 8.0, 9.6, 5.0])
+        # Index from README.
+        p_index = [7,8,9,14,20, 21,22,23,28,34]
+        v_index = [6,7,8,12,18, 19,20,21,25,31]
+        p = self.data.qpos[p_index]
+        v = self.data.qvel[v_index]
+        v_desired = np.zeros(10)
+        return kp * (p_desired - p) + kd * (v_desired - v)
+        
+    # The action is now the target position.
     def step(self, action):
         self.timestamp += 1
         ref_qpos, ref_qvel = self.ref_qpos[self.timestamp], self.ref_qvel[self.timestamp]
         xy_position_before = mass_center(self.model, self.data)
-        self.do_simulation(action, self.frame_skip)
+        
+        # Simulate at 2000 Hz for frame_skip times.
+        # torque_list = []
+        for _ in range(self.frame_skip):
+            torque = self.PD(action)
+            # torque_list.append(torque)
+            self.do_simulation(torque, 1)
+            
         xy_position_after = mass_center(self.model, self.data)
         # Transition happens here so time + 1
         
