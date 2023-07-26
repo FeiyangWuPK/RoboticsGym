@@ -1,6 +1,8 @@
 import os
 import time
-# from stable_baselines3 import SAC
+from typing import Callable
+
+from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
@@ -14,9 +16,6 @@ from stable_baselines3.common.callbacks import EvalCallback, CallbackList
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from sbx import SAC
-
-# from arm_cassie_env.cassie_env.cassieRLEnvMirror import CassieRLEnvMirror
 
 # register(id='Digit-v1',
 # 		entry_point='digit:DigitEnv',
@@ -43,9 +42,6 @@ register(id='MjCassie-v2',
 # 		max_episode_steps=600,
 # 		autoreset=True,)
 
-
-from typing import Callable
-
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
     Linear learning rate schedule.
@@ -66,7 +62,7 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
     return func
 
 def load_best_and_visualize():
-	env = make_vec_env("MjCassie-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
+	env = make_vec_env("MjCassie-v2", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
 	best_irl_model = SAC("MlpPolicy",
 				env,
 				verbose=1,
@@ -99,14 +95,15 @@ def train_model():
 		"progress_bar": True,
 		"verbose": 0,
 		"learning_rate": linear_schedule(5e-3),
-		"n_envs": 12,
+		"n_envs": 24,
 	}
 	run = wandb.init(
 		project="New cassie env",
 		config=config,
-		name=f'{time.strftime("%Y-%m-%d-%H-%M-%S")}-PDController',
+		name=f'{time.strftime("%m%d%H%M")}-PDController',
 		sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
 		# monitor_gym=True,  # auto-upload the videos of agents playing the game
+		notes="with PD controller, and with additional observational space",
 		save_code=True,  # optional
 	)
 	wandb.run.log_code(".")
@@ -120,8 +117,8 @@ def train_model():
 	# Separate evaluation env
 	eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': False, })
 	# Use deterministic actions for evaluation
-	eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
-									log_path="./logs/", eval_freq=5000,
+	eval_callback = EvalCallback(eval_env, best_model_save_path=f"logs/{run.name}/",
+									log_path=f"logs/{run.name}/", eval_freq=5000,
 									deterministic=True, render=False)
 	callback_list = CallbackList([eval_callback, wandbcallback])
 	# Init model

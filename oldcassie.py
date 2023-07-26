@@ -3,7 +3,6 @@ from old_cassie.cassie_env.quaternion_function import quat2yaw
 import numpy as np
 import gymnasium as gym
 from gymnasium.spaces import Box
-import mujoco
 from gymnasium import utils
 
 
