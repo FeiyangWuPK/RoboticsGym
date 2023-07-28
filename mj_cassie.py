@@ -56,12 +56,18 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         if exclude_current_positions_from_observation:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(78,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(39,), dtype=np.float64
             )
+            self.pos_index = np.array(
+                [2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34])
         else:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(80,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(40,), dtype=np.float64
             )
+            self.pos_index = np.array(
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34])
+        self.vel_index = np.array(
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31])
         self.frame_skip = 60
         MujocoEnv.__init__(
             self,
@@ -94,10 +100,6 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         self.cur_ref_qpos = self.init_qpos
         self.cur_ref_qvel = self.init_qvel
 
-        self.pos_index = np.array(
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34])
-        self.vel_index = np.array(
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31])
         
         self.reset_model()
 
@@ -143,8 +145,8 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             (
                 position[self.pos_index],
                 velocity[self.vel_index],
-                self.cur_ref_qpos[self.pos_index],
-                self.cur_ref_qvel[self.vel_index],
+                # self.cur_ref_qpos[self.pos_index],
+                # self.cur_ref_qvel[self.vel_index],
                 # com_inertia,
                 # com_velocity,
                 # actuator_forces,
@@ -217,13 +219,13 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         # reward for pelvis position difference
         r_0 = np.exp(- np.linalg.norm(ref_pelvis_pos -
-                     current_pelvis_pos, ord=2))
+                     current_pelvis_pos, ord=2) ** 2)
         # reward for pelvis orientation difference
         r_1 = np.exp(- np.linalg.norm(ref_pelvis_ori -
-                     current_pelvis_ori, ord=2))
+                     current_pelvis_ori, ord=2) ** 2)
         # reward for joint position difference
         r_2 = np.exp(- np.linalg.norm(ref_joint_pos -
-                     current_joint_pos, ord=2))
+                     current_joint_pos, ord=2) ** 2)
         # # reward for action difference
         # r_3 = np.exp(-(np.linalg.norm(ref_torque - action, ord=2) ) / (2 * sigmas[3] ) )
         # # reward for maximum action difference
@@ -238,13 +240,13 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         total_qpos_reward = np.exp(-np.linalg.norm(
             self.data.qpos[self.pos_index] - ref_qpos[self.pos_index], ord=2))
 
-        total_reward = 0.1 * r_0
+        total_reward = 0.3 * r_0
         total_reward += 0.1 * r_1
-        total_reward += 0.2 * r_2
-        total_reward += 0.2 * r_5
-        total_reward += 0.3 * total_qpos_reward
-        total_reward += 0.1 * forward_reward
-        # total_reward -= ctrl_cost
+        total_reward += 0.3 * r_2
+        total_reward += 0.1 * r_5
+        total_reward += 0.05 * total_qpos_reward
+        total_reward += 0.05 * forward_reward
+        total_reward -= 0.01 * ctrl_cost
         # + reward_weights[3] * r_3 + reward_weights[4] * r_4
         # total_reward = -np.linalg.norm(self.data.qpos - ref_qpos[:-1])-np.linalg.norm(action-ref_torque)
         # total_reward = np.exp(-np.linalg.norm(self.data.qpos - ref_qpos)) + np.exp(-np.linalg.norm(action-ref_torque))
@@ -302,13 +304,13 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
                 setattr(self.viewer.cam, key, value)
 
 def PD_control_CB(model, data):
-            kp = np.array([100, 100, 88, 96, 50, 100, 100, 88, 96, 50])
-            kd = np.array([10.0, 10.0, 8.0, 9.6, 5.0,
-                          10.0, 10.0, 8.0, 9.6, 5.0])
-            p_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
-            v_index = [6, 7, 8, 12, 18, 19, 20, 21, 25, 31]
-            p = data.qpos[p_index]
-            v = data.qvel[v_index]
-            p_desired = data.userdata[:]
-            v_desired = np.zeros(10)
-            data.ctrl[:] = kp * (p_desired - p) + kd * (v_desired - v)
+    kp = np.array([100, 100, 88, 96, 50, 100, 100, 88, 96, 50])
+    kd = np.array([10.0, 10.0, 8.0, 9.6, 5.0,
+                    10.0, 10.0, 8.0, 9.6, 5.0])
+    p_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
+    v_index = [6, 7, 8, 12, 18, 19, 20, 21, 25, 31]
+    p = data.qpos[p_index]
+    v = data.qvel[v_index]
+    p_desired = data.userdata[:]
+    v_desired = np.zeros(10)
+    data.ctrl[:] = kp * (p_desired - p) + kd * (v_desired - v)
