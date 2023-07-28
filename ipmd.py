@@ -329,14 +329,14 @@ class IPMD(OffPolicyAlgorithm):
             reward_est_loss = None
 
             
-            if self.num_timesteps <= int(self.student_irl_begin_timesteps):
+            if self.num_timesteps <= int(self.student_irl_begin_timesteps) and False:
                 estimated_rewards = th.cat(self.reward_est(replay_data.observations, replay_data.actions), dim=1)
                 reward_est_loss = th.linalg.norm(estimated_rewards - replay_data.rewards)
             else:
                 # Get expert reward estimation
                 expert_estimated_rewards = th.cat(self.reward_est(self.expert_replay_data.observations, self.expert_replay_data.actions), dim=1)
-                estimated_rewards = th.cat(self.reward_est(replay_data.observations, replay_data.actions), dim=1)
-                alpha = 0.3
+                estimated_rewards = th.cat(self.reward_est(replay_data.observations, actions_copy), dim=1)
+                alpha = 0.05
                 beta = 0.1
                 reward_est_loss = estimated_rewards.mean() - expert_estimated_rewards.mean() + alpha * (th.linalg.norm(th.cat([estimated_rewards, expert_estimated_rewards])))
                 # reward_est_loss = (estimated_rewards.mean() - expert_estimated_rewards.mean()) ** 2
@@ -344,10 +344,10 @@ class IPMD(OffPolicyAlgorithm):
                 # reward_est_loss += alpha * (th.linalg.norm(estimated_rewards) + th.linalg.norm(expert_estimated_rewards))
 
             reward_est_losses.append(reward_est_loss.item())
-            if self.num_timesteps > int(self.student_irl_begin_timesteps) and self.num_timesteps % 1000 == 0:
-                self.reward_est.optimizer.zero_grad()
-                reward_est_loss.backward()
-                self.reward_est.optimizer.step()
+            
+            self.reward_est.optimizer.zero_grad()
+            reward_est_loss.backward()
+            self.reward_est.optimizer.step()
 
         self._n_updates += gradient_steps
 
@@ -358,9 +358,9 @@ class IPMD(OffPolicyAlgorithm):
         self.logger.record("train/reward_est_loss", np.mean(reward_est_losses))
         self.logger.record("train/estimated_rewards.mean", estimated_rewards.mean().item())
         self.logger.record("train/estimated_rewards.std", estimated_rewards.std().item())
-        if self.num_timesteps > int(self.student_irl_begin_timesteps):
-            self.logger.record("train/expert_estimated_rewards.mean", expert_estimated_rewards.mean().item())
-            self.logger.record("train/expert_estimated_rewards.std", expert_estimated_rewards.std().item())
+        
+        self.logger.record("train/expert_estimated_rewards.mean", expert_estimated_rewards.mean().item())
+        self.logger.record("train/expert_estimated_rewards.std", expert_estimated_rewards.std().item())
         if len(ent_coef_losses) > 0:
             self.logger.record("train/ent_coef_loss", np.mean(ent_coef_losses))
 
