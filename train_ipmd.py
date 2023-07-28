@@ -205,9 +205,12 @@ def train_ipmd_agent():
             verbose=2,
         )
     # Create log dir
-    train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv)
+    # train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv)
+    train_env = gym.make('CassieMirror-v1')
+
 	# Separate evaluation env
-    eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv)
+    # eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv)
+    eval_env = make_vec_env(config['env_id'], n_envs=1, )
 	# Use deterministic actions for evaluation
     eval_callback = EvalCallback(eval_env, 
                                  best_model_save_path=f"./logs/{run.project}/{run.name}/",

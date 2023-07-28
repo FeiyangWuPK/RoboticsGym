@@ -23,7 +23,7 @@ import numpy as np
 _dir_path = os.path.dirname(os.path.realpath(__file__))
 
 # Initialize libcassiesim
-default_model = "/home/feiyang/Develop/Cassie/RoboticsIRL/RoboticsGym/old_cassie/cassie_m/model/0cassie.xml"
+default_model = "old_cassie/cassie_m/model/0cassie.xml"
 cassie_mujoco_init(default_model.encode('utf-8'))
 
 # Interface classes
@@ -48,7 +48,6 @@ class CassieSim:
 
         params_array = (ctypes.c_int32 * 6)()
         cassie_sim_params(self.c, params_array)
-        print('passed!')
         self.nv = cassie_sim_nv(self.c)
         self.nbody = cassie_sim_nbody(self.c)
         self.nq = cassie_sim_nq(self.c)
