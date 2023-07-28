@@ -13,15 +13,16 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.sac import SAC
 from stable_baselines3.common.env_checker import check_env
 from ipmd import IPMD
-from arm_cassie_env.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
-from arm_cassie_env.cassie_env.oldCassie import OldCassieMirrorEnv
+import mujoco
+# from old_cassie.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
+# from oldcassie import OldCassieMirrorEnv
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from gymnasium.envs.registration import register
 
 register(
         id='CassieMirror-v1',
-        entry_point='arm_cassie_env.cassie_env.oldCassie:OldCassieMirrorEnv',
+        entry_point='oldcassie:OldCassieMirrorEnv',
         max_episode_steps=600,
         )
 
@@ -179,19 +180,20 @@ def visualize_expert_agent_traj(model_path:str):
 def train_ipmd_agent():
     config = {
         "policy_type": "MlpPolicy",
-        "total_timesteps": 1e7,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v1",
         "progress_bar": True,
         "verbose": 0,
         'ent_coef': 'auto',
-        'learning_rate': linear_schedule(3e-4),
-        'train_freq': 1,
-        "n_envs": 72,
-        'gradient_steps': 1, 
-        'batch_size': 256,
+        'learning_rate': linear_schedule(5e-3),
+        'train_freq': 3,
+        "n_envs": 12,
+        'gradient_steps': 3, 
+        'batch_size': 300,
         'buffer_size': int(1e6),
         'expert_replay_buffer_loc': 'expert_demo/SAC/10traj_morestable',
         'expert_traj_size': 600,
+        'student_begin': 0
     }
     run = wandb.init(
         project="IRL IPMD Param Optimization",
@@ -205,12 +207,13 @@ def train_ipmd_agent():
         )
     # Create log dir
     train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv)
+
 	# Separate evaluation env
     eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv)
 	# Use deterministic actions for evaluation
     eval_callback = EvalCallback(eval_env, 
-                                 best_model_save_path=f"./logs/{run.name}/",
-                                 log_path=f"./logs/{run.name}/", 
+                                 best_model_save_path=f"./logs/{run.project}/{run.name}/",
+                                 log_path=f"./logs/{run.project}/{run.name}/", 
                                  eval_freq=5000,
                                  n_eval_episodes=5,
                                  deterministic=True, 
@@ -219,7 +222,7 @@ def train_ipmd_agent():
 	# Init model
     irl_model = IPMD('MlpPolicy', 
                      env=train_env, 
-                     gamma=0.99, 
+                     gamma=1.00, 
                      verbose=config['verbose'],
                      buffer_size=config['buffer_size'],
                      ent_coef=config['ent_coef'], 
@@ -229,7 +232,8 @@ def train_ipmd_agent():
                      learning_starts=100,
                      expert_replay_buffer_loc=config['expert_replay_buffer_loc'], 
                      expert_traj_size=config['expert_traj_size'],
-                     tensorboard_log=f'logs/tensorboard/{run.name}/'
+                     tensorboard_log=f'logs/tensorboard/{run.project}/{run.name}/',
+                     student_irl_begin_timesteps=config['student_begin'],
                      )
     # Model learning
     irl_model.learn(
@@ -252,7 +256,7 @@ def visualize_irl_agent_traj(model_path:str):
         "env_id": "CassieMirror-v1",
         "progress_bar": True,
         "verbose": 1,
-        'ent_coef': 0.01,
+        'ent_coef': 'auto',
         'learning_rate': 5e-3,
         "n_envs": 32,
         'gradient_steps': 1, 
@@ -262,7 +266,7 @@ def visualize_irl_agent_traj(model_path:str):
     eval_env = make_vec_env(config['env_id'], 
                             n_envs=1, 
                             vec_env_cls=SubprocVecEnv,
-                            env_kwargs={'render': True})
+                            env_kwargs={'render': True, 'record_for_reward_inference': True})
     
     model = IPMD.load(model_path, env=eval_env)
     mean_reward, _ = evaluate_policy(model, n_eval_episodes=10, env=eval_env, render=False)
@@ -274,4 +278,4 @@ if __name__ == '__main__':
     # visualize_expert_agent_traj('logs/2023-07-11-13-24-37/best_model.zip')
     # obtain_expert_traj('logs/2023-07-11-13-24-37/best_model.zip', 10)
     train_ipmd_agent()
-    # visualize_irl_agent_traj('logs/2023-07-12-07-54-02-Entropy0.01/best_model.zip')
+    # visualize_irl_agent_traj('logs/2023-07-19-19-56-18/best_model.zip')

@@ -80,6 +80,13 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         self.init_qpos = initial_qpos
         self.init_qvel = initial_qvel
+
+        self.ref_qpos = np.load(
+            'reference_trajectories/cassie_walk/old_cassie_reference_qpos_list.npy')
+        self.ref_qvel = np.load(
+            'reference_trajectories/cassie_walk/old_cassie_reference_qvel_list.npy')
+        self.init_qpos = self.ref_qpos[0]
+        self.init_qvel = self.ref_qvel[0]
         self.reset()
         
 
@@ -133,6 +140,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
     def step(self, action):
         ref_mpos, ref_mvel, ref_torque = self.ref_trajectory.action(self.timestamp)
         ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
+        ref_qpos, ref_qvel = self.ref_qpos[self.timestamp], self.ref_qvel[self.timestamp]
         
         
         xy_position_before = mass_center(self.model, self.data)

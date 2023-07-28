@@ -8,10 +8,8 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecNormalize
 from stable_baselines3.common.evaluation import evaluate_policy
 from gymnasium.envs.registration import register
-
-import gym
 from stable_baselines3.common.callbacks import EvalCallback
-from arm_cassie_env.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
+from old_cassie.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
 from ipmd import IPMD
 from newAlgo import EvalStudentCallback, evaluate_student_policy, HIP
 

@@ -1,4 +1,4 @@
-from arm_cassie_env.cassie_env.cassieRLEnvMirror import *
+from old_cassie.cassie_env.cassieRLEnvMirror import *
 import pickle
 
 class cassieRLEnvMirrorIKTraj(cassieRLEnvMirror):
