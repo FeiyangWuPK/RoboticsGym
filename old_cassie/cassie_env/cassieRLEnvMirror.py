@@ -1,7 +1,7 @@
 import math
 import pickle
-from arm_cassie_env.cassie_env.quaternion_function import *
-from arm_cassie_env.cassie_env.cassieRLEnvMultiTraj import *
+from old_cassie.cassie_env.quaternion_function import *
+from old_cassie.cassie_env.cassieRLEnvMultiTraj import *
 
 class cassieRLEnvMirror(cassieRLEnvMultiTraj):
     def __init__(self, visual=False, acbuf=False, record_for_reward_inference = False):

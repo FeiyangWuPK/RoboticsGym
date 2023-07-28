@@ -140,3 +140,6 @@ dmypy.json
 /logs/best_model.zip
 /logs/evaluations.npz
 
+logs/*
+wandb/*
+MUJOCO_LOG.TXT

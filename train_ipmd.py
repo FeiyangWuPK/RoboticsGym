@@ -13,15 +13,15 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.sac import SAC
 from stable_baselines3.common.env_checker import check_env
 from ipmd import IPMD
-from arm_cassie_env.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
-from arm_cassie_env.cassie_env.oldCassie import OldCassieMirrorEnv
+# from arm_cassie_env.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
+# from arm_cassie_env.cassie_env.oldCassie import OldCassieMirrorEnv
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from gymnasium.envs.registration import register
 
 register(
         id='CassieMirror-v1',
-        entry_point='arm_cassie_env.cassie_env.oldCassie:OldCassieMirrorEnv',
+        entry_point='oldcassie:OldCassieMirrorEnv',
         max_episode_steps=600,
         )
 
@@ -210,8 +210,8 @@ def train_ipmd_agent():
     eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv)
 	# Use deterministic actions for evaluation
     eval_callback = EvalCallback(eval_env, 
-                                 best_model_save_path=f"./logs/{run.name}/",
-                                 log_path=f"./logs/{run.name}/", 
+                                 best_model_save_path=f"./logs/{run.project}/{run.name}/",
+                                 log_path=f"./logs/{run.project}/{run.name}/", 
                                  eval_freq=5000,
                                  n_eval_episodes=5,
                                  deterministic=True, 
@@ -230,7 +230,7 @@ def train_ipmd_agent():
                      learning_starts=100,
                      expert_replay_buffer_loc=config['expert_replay_buffer_loc'], 
                      expert_traj_size=config['expert_traj_size'],
-                     tensorboard_log=f'logs/tensorboard/{run.name}/',
+                     tensorboard_log=f'logs/tensorboard/{run.project}/{run.name}/',
                      student_irl_begin_timesteps=config['student_begin'],
                      )
     # Model learning
@@ -275,5 +275,5 @@ if __name__ == '__main__':
     # visualize_expert_agent_traj(model_path=best_model_path)
     # visualize_expert_agent_traj('logs/2023-07-11-13-24-37/best_model.zip')
     # obtain_expert_traj('logs/2023-07-11-13-24-37/best_model.zip', 10)
-    # train_ipmd_agent()
-    visualize_irl_agent_traj('logs/2023-07-19-19-56-18/best_model.zip')
+    train_ipmd_agent()
+    # visualize_irl_agent_traj('logs/2023-07-19-19-56-18/best_model.zip')
