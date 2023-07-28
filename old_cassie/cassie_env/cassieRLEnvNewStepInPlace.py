@@ -1,7 +1,7 @@
-from arm_cassie_env.cassie_env.cassieRLEnvWithMoreState import *
-from arm_cassie_env.cassie_m.cassiemujoco_ctypes import *
+from old_cassie.cassie_env.cassieRLEnvWithMoreState import *
+from old_cassie.cassie_m.cassiemujoco_ctypes import *
 import math
-from arm_cassie_env.cassie_env.quaternion_function import *
+from old_cassie.cassie_env.quaternion_function import *
 
 
 class cassieRLEnvNewStepInPlace(cassieRLEnvWithFootForces):

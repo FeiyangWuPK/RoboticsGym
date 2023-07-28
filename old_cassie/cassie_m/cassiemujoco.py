@@ -40,7 +40,6 @@ class CassieSim:
             if terrain:
                 base += '_hfield'
             self.modelfile = os.path.join(_dir_path, base + '.xml')
-        print(self.modelfile.encode('utf-8'))
         self.c = cassie_sim_init(self.modelfile.encode('utf-8'), True)
         if terrain:
             x_res, y_res = self.get_hfield_nrow(), self.get_hfield_ncol()

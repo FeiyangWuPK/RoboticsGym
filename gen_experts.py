@@ -15,8 +15,8 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common import base_class  # pytype: disable=pyi-error
 from newAlgo import HIP, EvalStudentCallback, evaluate_student_policy
-from arm_cassie_env.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
-from arm_cassie_env.cassie_env.oldCassie import OldCassieMirrorEnv
+from old_cassie.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
+from oldcassie import OldCassieMirrorEnv
 from inversepolicies import IPMDPolicy
 import wandb
 from wandb.integration.sb3 import WandbCallback
