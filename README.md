@@ -3,6 +3,8 @@
 
 The Cassie joint definition from cassie.xml.
 
+qpos 35: env.model.jnt_qposadr, env.init_qpos.size
+
 [ 0] Pelvis x
 [ 1] Pelvis y
 [ 2] Pelvis z
@@ -38,6 +40,32 @@ The Cassie joint definition from cassie.xml.
 [32] Right foot crank
 [33] Right plantar rod
 [34] Right foot            (Motor [9], Joint [5])
+
+qvel 32: env.model.jnt_dofadr, env.init_qvel.size
+
+[0-5] base
+[6] left-hip-roll
+[7] left-hip-yaw
+[8] left-hip-pitch
+[9-11] left-achillies-rod
+[12] left-knee
+[13] left-shin
+[14] left-tarsus
+[15] left-heel-spring
+[16] left foot crank
+[17] left plantar rod
+[18] left foot
+[19] right-hip-roll
+[20] right-hip-yaw
+[21] right-hip-pitch
+[22-24] right-achillies-rod
+[25] right-knee
+[26] right-shin
+[27] right-tarsus
+[28] right-heel-spring
+[29] right foot crank
+[30] right plantar rod
+[31] right foot
 
 motor/actuators: 10
 

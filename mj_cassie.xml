@@ -21,7 +21,10 @@
       </default>
     </default>
   </default>
-
+  
+  <!-- https://github.com/deepmind/mujoco/issues/351 -->
+  <size nuserdata="10"/>
+  
   <asset>
     <texture name="cassie" file="cassie-texture.png" type="2d"/>
     <material name="cassie" texture="cassie"/>

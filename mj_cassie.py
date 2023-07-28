@@ -56,11 +56,11 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         if exclude_current_positions_from_observation:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(69,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(78,), dtype=np.float64
             )
         else:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(67,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(80,), dtype=np.float64
             )
         self.frame_skip = 60
         MujocoEnv.__init__(
@@ -77,9 +77,9 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         # exit()
         # print(self.ref_trajectory.time.shape)
         # exit()
-        self.ref_qpos = np.load(
+        self.ref_qposes = np.load(
             'reference_trajectories/cassie_walk/old_cassie_reference_qpos_list.npy')
-        self.ref_qvel = np.load(
+        self.ref_qveles = np.load(
             'reference_trajectories/cassie_walk/old_cassie_reference_qvel_list.npy')
         # Index from README.
         self.p_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
@@ -89,8 +89,16 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         self.timestamp = 0
 
         # initial_qpos, initial_qvel = self.ref_trajectory.state(0)
-        self.init_qpos = self.ref_qpos[0]
-        self.init_qvel = self.ref_qvel[0]
+        self.init_qpos = self.ref_qposes[0]
+        self.init_qvel = self.ref_qveles[0]
+        self.cur_ref_qpos = self.init_qpos
+        self.cur_ref_qvel = self.init_qvel
+
+        self.pos_index = np.array(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34])
+        self.vel_index = np.array(
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31])
+        
         self.reset_model()
 
     @property
@@ -133,8 +141,10 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         return np.concatenate(
             (
-                position,
-                velocity,
+                position[self.pos_index],
+                velocity[self.vel_index],
+                self.cur_ref_qpos[self.pos_index],
+                self.cur_ref_qvel[self.vel_index],
                 # com_inertia,
                 # com_velocity,
                 # actuator_forces,
@@ -165,21 +175,14 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
     # The action is now the target position.
     def step(self, action):
         self.timestamp += 1
-        ref_qpos, ref_qvel = self.ref_qpos[self.timestamp], self.ref_qvel[self.timestamp]
+        ref_qpos, ref_qvel = self.ref_qposes[self.timestamp], self.ref_qveles[self.timestamp]
         xy_position_before = mass_center(self.model, self.data)
+        self.cur_ref_qpos = ref_qpos
+        self.cur_ref_qvel = ref_qvel
 
         q_pos_modified = action + ref_qpos[self.p_index]
-        # Simulate at 2000 Hz for frame_skip times.
-        # if np.any(np.isnan(q_pos_modified)):
-        #     print(f'q_pos_modified {q_pos_modified}')
-        #     print(f'nan in ref qpos', ref_qpos[self.p_index])
-        #     print(f'action {action}')
-        #     exit()
-        # if np.any(np.isinf(q_pos_modified)):
-        #     print(q_pos_modified, ref_qpos[self.p_index], action)
-        #     exit()
-        self.set_state(ref_qpos, ref_qvel)
-        # self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
+        
+        self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
 
         xy_position_after = mass_center(self.model, self.data)
         # Transition happens here so time + 1
@@ -198,11 +201,6 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         joint_idx = [15, 16, 20, 29, 30, 34]
         joint_idx = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
-
-        pos_index = np.array(
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34])
-        vel_index = np.array(
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31])
 
         ref_pelvis_pos = ref_qpos[0:3]
         ref_pelvis_ori = ref_qpos[3:7]
@@ -234,11 +232,11 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         # r_4 = np.exp(-(np.abs(ref_max_action - current_max_action) **2) / (2 * sigmas[4] **2) )
 
         # + np.exp(-(np.linalg.norm(ref_qpos[:-1] - self.data.qpos))) * 1e1
-        r_5 = np.exp(-(np.linalg.norm(ref_qvel[vel_index] -
-                     self.data.qvel[vel_index], ord=2)) / (2 * 1)) * 1e1
+        r_5 = np.exp(-(np.linalg.norm(ref_qvel[self.vel_index] -
+                     self.data.qvel[self.vel_index], ord=2)) / (2 * 1)) * 1e1
 
         total_qpos_reward = np.exp(-np.linalg.norm(
-            self.data.qpos[pos_index] - ref_qpos[pos_index], ord=2))
+            self.data.qpos[self.pos_index] - ref_qpos[self.pos_index], ord=2))
 
         total_reward = 0.1 * r_0
         total_reward += 0.1 * r_1
@@ -290,18 +288,6 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         self.data.userdata = np.zeros(10)  # Use userdata as target position.
         # Define a callback that modify the ctrl before mj_step.
 
-        def PD_control_CB(model, data):
-            kp = np.array([100, 100, 88, 96, 50, 100, 100, 88, 96, 50])
-            kd = np.array([10.0, 10.0, 8.0, 9.6, 5.0,
-                          10.0, 10.0, 8.0, 9.6, 5.0])
-            p_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
-            v_index = [6, 7, 8, 12, 18, 19, 20, 21, 25, 31]
-            p = data.qpos[p_index]
-            v = data.qvel[v_index]
-            p_desired = data.userdata[:]
-            v_desired = np.zeros(10)
-            data.ctrl[:] = kp * (p_desired - p) + kd * (v_desired - v)
-
         mujoco.set_mjcb_control(None)
         mujoco.set_mjcb_control(lambda m, d: PD_control_CB(m, d))
 
@@ -314,3 +300,15 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
                 getattr(self.viewer.cam, key)[:] = value
             else:
                 setattr(self.viewer.cam, key, value)
+
+def PD_control_CB(model, data):
+            kp = np.array([100, 100, 88, 96, 50, 100, 100, 88, 96, 50])
+            kd = np.array([10.0, 10.0, 8.0, 9.6, 5.0,
+                          10.0, 10.0, 8.0, 9.6, 5.0])
+            p_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
+            v_index = [6, 7, 8, 12, 18, 19, 20, 21, 25, 31]
+            p = data.qpos[p_index]
+            v = data.qvel[v_index]
+            p_desired = data.userdata[:]
+            v_desired = np.zeros(10)
+            data.ctrl[:] = kp * (p_desired - p) + kd * (v_desired - v)

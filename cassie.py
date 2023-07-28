@@ -31,7 +31,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 36,
+        "render_fps": 33,
     }
 
     def __init__(
