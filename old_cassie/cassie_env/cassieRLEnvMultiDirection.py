@@ -1,4 +1,4 @@
-from arm_cassie_env.cassie_m.cassiemujoco_ctypes import *
+from old_cassie.cassie_m.cassiemujoco_ctypes import *
 import math
 from quaternion_function import *
 from cassieRLEnvMultiSkill import *

@@ -13,8 +13,9 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.sac import SAC
 from stable_baselines3.common.env_checker import check_env
 from ipmd import IPMD
-# from arm_cassie_env.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
-# from arm_cassie_env.cassie_env.oldCassie import OldCassieMirrorEnv
+import mujoco
+# from old_cassie.cassie_env.cassieRLEnvMirror import cassieRLEnvMirror
+# from oldcassie import OldCassieMirrorEnv
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from gymnasium.envs.registration import register
@@ -205,12 +206,10 @@ def train_ipmd_agent():
             verbose=2,
         )
     # Create log dir
-    # train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv)
-    train_env = gym.make('CassieMirror-v1')
+    train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv)
 
 	# Separate evaluation env
-    # eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv)
-    eval_env = make_vec_env(config['env_id'], n_envs=1, )
+    eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv)
 	# Use deterministic actions for evaluation
     eval_callback = EvalCallback(eval_env, 
                                  best_model_save_path=f"./logs/{run.project}/{run.name}/",

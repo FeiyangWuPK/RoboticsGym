@@ -1,6 +1,6 @@
 from torch import rand
 from cassie_env.quaternion_function import inverse_quaternion, quaternion2euler, quaternion2mat, quaternion_product
-import gym
+import gymnasium
 import time
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv

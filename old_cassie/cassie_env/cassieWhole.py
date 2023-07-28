@@ -1,6 +1,6 @@
 from numpy import dtype
-from arm_cassie_env.cassie_env.cassieRLEnvMirrorIKTraj import *
-from arm_cassie_env.cassie_env.cassieRLEnvMirror import *
+from old_cassie.cassie_env.cassieRLEnvMirrorIKTraj import *
+from old_cassie.cassie_env.cassieRLEnvMirror import *
 
 class cassieRLEnvStable(cassieRLEnvMirror):
     def __init__(self,visual=False,setforce=-1):

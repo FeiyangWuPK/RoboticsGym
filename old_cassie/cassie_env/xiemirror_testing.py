@@ -3,8 +3,8 @@ import sys
 # sys.path.append(os.path.abspath(os.path.join(os.path.__file__,"..","..")))
 sys.path.append("..")
 from cassie_m.cassiemujoco import *
-from xie.cassieRLEnvMirror import cassieRLEnvMirror
-from xie.cassieRLEnvMirrorIKTraj import cassieRLEnvMirrorIKTraj
+from cassieRLEnvMirror import cassieRLEnvMirror
+from cassieRLEnvMirrorIKTraj import cassieRLEnvMirrorIKTraj
 
 import time as t
 
@@ -12,8 +12,8 @@ import statistics
 
 import argparse
 
-import gym
-from gym import wrappers
+import gymnasium as gym
+from gymnasium import wrappers
 import random
 import numpy as np
 
