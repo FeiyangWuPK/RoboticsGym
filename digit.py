@@ -79,6 +79,12 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.init_qpos = initial_qpos
         self.init_qvel = initial_qvel
         
+        # Index from README. The toes are actuated by motor A and B.
+        self.p_index = [7, 8, 9, 14, 18, 23, 30, 31, 32, 33, 
+                        34, 35, 36, 41, 45, 50, 57, 58, 59, 60]
+        self.v_index = [6, 7, 8, 12, 16, 20, 26, 27, 28, 29, 
+                        30, 31, 32, 36, 40, 44, 50, 51, 52, 53]
+        
         self.reset_model()
 
     @property
@@ -128,13 +134,27 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             )
         )
 
+    def _step_mujoco_simulation(self, ctrl, n_frames):
+        # Set the control target, this userdata is used by PD control callback.
+        self.data.userdata[:] = ctrl
+
+        mujoco.mj_step(self.model, self.data, nstep=n_frames)
+
+        # As of MuJoCo 2.0, force-related quantities like cacc are not computed
+        # unless there's a force sensor in the model.
+        # See https://github.com/openai/gym/issues/1541
+        mujoco.mj_rnePostConstraint(self.model, self.data)
+        
     def step(self, action):
         ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
         self.timestamp += 1
         
         xy_position_before = mass_center(self.model, self.data)
         
-        self.do_simulation(np.zeros(20), self.frame_skip)
+        # self.do_simulation(np.zeros(20), self.frame_skip)
+        q_pos_modified = action + ref_qpos[self.p_index]
+        self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
+        
         position = self.data.qpos.flat.copy()
         rod_index = [10,11,12,13, 19,20,21,22, 24,25,26,27, 
                      37,38,39,40, 46,47,48,49, 51,52,53,54]
@@ -186,6 +206,13 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         self.timestamp = 0
         observation = self._get_obs()
+        
+        self.data.userdata = np.zeros(20)  # Use userdata as target position.
+        # Define a callback that modify the ctrl before mj_step.
+
+        mujoco.set_mjcb_control(None)
+        mujoco.set_mjcb_control(lambda m, d: PD_control_CB(m, d))
+        
         return observation
 
     def viewer_setup(self):
@@ -195,3 +222,14 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
                 getattr(self.viewer.cam, key)[:] = value
             else:
                 setattr(self.viewer.cam, key, value)
+
+def PD_control_CB(model, data):
+    kp = np.array([100, 100, 88, 96, 50, 50, 50, 50, 50, 50, 100, 100, 88, 96, 50, 50, 50, 50, 50, 50])
+    kd = np.array([10.0, 10.0, 8.0, 9.6, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 8.0, 9.6, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0])
+    p_index = [7, 8, 9, 14, 18, 23, 30, 31, 32, 33, 34, 35, 36, 41, 45, 50, 57, 58, 59, 60]
+    v_index = [6, 7, 8, 12, 16, 20, 26, 27, 28, 29, 30, 31, 32, 36, 40, 44, 50, 51, 52, 53]
+    p = data.qpos[p_index]
+    v = data.qvel[v_index]
+    p_desired = data.userdata[:]
+    v_desired = np.zeros(20)
+    data.ctrl[:] = kp * (p_desired - p) + kd * (v_desired - v)
