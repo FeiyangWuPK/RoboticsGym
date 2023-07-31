@@ -476,7 +476,7 @@ class HIP(OffPolicyAlgorithm):
             else:
                 student_ent_coef = self.student_ent_coef_tensor
 
-            student_ent_coefs.append(student_ent_coef.item())
+            # student_ent_coefs.append(student_ent_coef.item())
 
             # Optimize entropy coefficient, also called
             # entropy temperature or alpha in the paper

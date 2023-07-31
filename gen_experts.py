@@ -1,6 +1,7 @@
 import gymnasium as gym
 import sys, os
 from typing import Callable
+import mujoco
 import datetime
 import time
 import optuna
@@ -32,9 +33,9 @@ def train_SAC(env:str = "HalfCheetah-v4"):
         'n_envs': 16,
     }
     # Create log dir
-    train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'],vec_env_cls=SubprocVecEnv, vec_env_kwargs=dict(start_method='fork'))
+    train_env = make_vec_env(config['env_id'], n_envs=config['n_envs'],vec_env_cls=SubprocVecEnv, )
 	# Separate evaluation env
-    eval_env = make_vec_env(config['env_id'], n_envs=1,vec_env_cls=SubprocVecEnv,vec_env_kwargs=dict(start_method='fork'))
+    eval_env = make_vec_env(config['env_id'], n_envs=1,vec_env_cls=SubprocVecEnv,)
 	# Use deterministic actions for evaluation
     eval_callback = EvalCallback(eval_env, 
                                  best_model_save_path=f"./logs/{env}/",
@@ -55,7 +56,7 @@ def train_SAC(env:str = "HalfCheetah-v4"):
     sac_model.learn(total_timesteps=int(config['total_timesteps']), callback=callback_list, progress_bar=True)
 
 def gen_expert_rb(env_id:str):
-    env = make_vec_env(env_id, n_envs=1,vec_env_cls=SubprocVecEnv,vec_env_kwargs=dict(start_method='fork'))
+    env = make_vec_env(env_id, n_envs=1,)
     model = SAC(policy="MlpPolicy", env=env, verbose=1, train_freq=1000 * 10)
     model.set_parameters(f"logs/{env_id}/best_model.zip")
     _, callback = model._setup_learn(1000 * 10, callback=None, )
@@ -69,5 +70,7 @@ def gen_expert_rb(env_id:str):
     print(f' {env_id}: {model.replay_buffer.rewards.sum()/10}')
     model.save_replay_buffer(f"logs/{env_id}/expert_rb")
 
-for env in [ 'HalfCheetah-v4', 'Hopper-v4', 'Humanoid-v4', 'Walker2d-v4']:
-    gen_expert_rb(env_id=env)
+if __name__ == '__main__':
+    for env in ['Humanoid-v4', 'Walker2d-v4']:
+        train_SAC(env=env)
+        gen_expert_rb(env_id=env)

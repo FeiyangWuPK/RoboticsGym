@@ -1,4 +1,5 @@
 import gymnasium as gym
+import mujoco
 import sys, os
 from typing import Callable
 import datetime
@@ -201,21 +202,21 @@ def visualize_best_student():
     return mean_student_reward
 
 def run_mujoco_experiments():
-    for env_id in [ 'HalfCheetah-v4', 'Hopper-v4', 'Humanoid-v4', 'Walker2d-v4']:
+    for env_id in ['Hopper-v4', 'Humanoid-v4', 'Walker2d-v4']:
         config = {
         "policy_type": "IPMDPolicy",
         "total_timesteps": 5e6,
         "env_id": env_id,
         'buffer_size': 1000000,
-        'train_freq': 1,
-        'gradient_steps': 1,
+        'train_freq': 3,
+        'gradient_steps': 3,
         "progress_bar": True,
-        "verbose": 0,
-        'ent_coef': 'auto',
-        'student_ent_coef': 'auto',
+        "verbose": 1,
+        'ent_coef': '0.001',
+        'student_ent_coef': 0.001,
         'learning_rate': 3e-4,
         "n_envs": 12,
-        'batch_size': 256,
+        'batch_size': 512,
         'seed': 42,
         'expert_replaybuffersize': 1000,
         'expert_replaybuffer': f'logs/{env_id}/expert_rb',
@@ -300,9 +301,9 @@ def run_mujoco_experiments():
         run.finish()
 
 if __name__ == '__main__':
-    # mean_reward, student_reward = train()
+    mean_reward, student_reward = train()
     # print('finished! mean_reward: ', mean_reward, student_reward)
     # visualize_best_student()
     # array = np.load('logs/2023-07-07-11-16-17/student/evaluations.npz')
     # print(array['results'].mean(axis=1).max())
-    run_mujoco_experiments()
+    # run_mujoco_experiments()
