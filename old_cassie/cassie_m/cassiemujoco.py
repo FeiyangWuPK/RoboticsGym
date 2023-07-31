@@ -23,8 +23,8 @@ import numpy as np
 _dir_path = os.path.dirname(os.path.realpath(__file__))
 
 # Initialize libcassiesim
-default_model = "old_cassie/cassie_m/model/0cassie.xml"
-cassie_mujoco_init(default_model.encode('utf-8'))
+default_model = "old_cassie/cassie_m/model/cassie.xml"
+cassie_mujoco_init(str.encode(default_model))
 
 # Interface classes
 # Note: Making the optional argument be a global var be default is perhaps not the safest thing to do
@@ -40,7 +40,9 @@ class CassieSim:
             if terrain:
                 base += '_hfield'
             self.modelfile = os.path.join(_dir_path, base + '.xml')
+
         self.c = cassie_sim_init(self.modelfile.encode('utf-8'), True)
+
         if terrain:
             x_res, y_res = self.get_hfield_nrow(), self.get_hfield_ncol()
             self.hfields = generate_perlin(x_res, y_res)

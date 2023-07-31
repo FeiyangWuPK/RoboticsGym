@@ -1,7 +1,7 @@
 import os
 import time
 from typing import Callable
-
+import mujoco
 from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
@@ -15,6 +15,8 @@ from gymnasium.envs.registration import register
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList
 import wandb
 from wandb.integration.sb3 import WandbCallback
+
+from ipmd import IPMD
 
 
 # register(id='Digit-v1',
@@ -37,10 +39,16 @@ register(id='MjCassie-v2',
 # 		max_episode_steps=1000,
 # 		autoreset=True,)
 
-# register(id='OldCassie-v1',
-# 		entry_point='oldcassie:OldCassieMirrorEnv',
-# 		max_episode_steps=600,
-# 		autoreset=True,)
+register(id='OldCassie-v1',
+		entry_point='oldcassie:OldCassieMirrorEnv',
+		max_episode_steps=600,
+		autoreset=True,)
+
+register(id='OldCassie-v2',
+		entry_point='oldcassie_v2:OldCassieMirrorEnv',
+		max_episode_steps=600,
+		autoreset=True,)
+
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
@@ -77,7 +85,6 @@ def load_best_and_visualize():
                 learning_starts=0,
                 replay_buffer=best_irl_model.replay_buffer,
                 log_interval=1,)
-	
 	
 def visualize_reference_traj():
 	env = make_vec_env("CassieViz-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
@@ -137,7 +144,17 @@ def train_model():
 	)
 	run.finish()
 
+# Test old cassie v2
+def test_old_cassie_v2():
+	env = make_vec_env("OldCassie-v1", n_envs=1, env_kwargs={'visual': True})
+	eval_env = gym.make('OldCassie-v1', visual=True)
+	model = IPMD.load("logs/IRL IPMD Param Optimization/2023-07-28-13-56-28/best_model.zip", env=env)
+	_, callback = model._setup_learn(600, callback=None, )
+	mean_reward, std = evaluate_policy(model, eval_env, render=False, n_eval_episodes=5)
+	print(f'Mean reward: {mean_reward}, std: {std}')
+
 if __name__ == "__main__":
-	train_model()
+	# train_model()
 	# load_best_and_visualize()
+	test_old_cassie_v2()
 		
