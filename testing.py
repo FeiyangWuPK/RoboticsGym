@@ -19,10 +19,10 @@ from wandb.integration.sb3 import WandbCallback
 from ipmd import IPMD
 
 
-# register(id='Digit-v1',
-# 		entry_point='digit:DigitEnv',
-# 		max_episode_steps=1000,
-# 		autoreset=True,)
+register(id='Digit-v1',
+		entry_point='digit:DigitEnv',
+		max_episode_steps=1000,
+		autoreset=True,)
 
 register(id='Cassie-v1',
 		entry_point='cassie:CassieEnv',
@@ -153,8 +153,15 @@ def test_old_cassie_v2():
 	mean_reward, std = evaluate_policy(model, eval_env, render=False, n_eval_episodes=5)
 	print(f'Mean reward: {mean_reward}, std: {std}')
 
+
+def test_digit():
+	env = make_vec_env('Digit-v1', n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, })
+	model = SAC("MlpPolicy", env, verbose=1)
+	model.learn(total_timesteps=1e6, log_interval=10, progress_bar=True)
+
 if __name__ == "__main__":
 	# train_model()
 	# load_best_and_visualize()
-	test_old_cassie_v2()
+	# test_old_cassie_v2()
+    test_digit()
 		

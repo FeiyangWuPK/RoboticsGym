@@ -4,6 +4,8 @@ from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium import utils
 from gymnasium.spaces import Box
 import mujoco
+from mujoco._functions import mj_rnePostConstraint
+from mujoco._functions import mj_step
 
 from reference_trajectories.loadDigit import DigitTrajectory
 
@@ -33,13 +35,13 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
     def __init__(
             self,
-            forward_reward_weight=1.25,
+            forward_reward_weight=0.1,
             ctrl_cost_weight=0.1,
-            healthy_reward=5.0,
+            healthy_reward=0.1,
             terminate_when_unhealthy=True,
-            healthy_z_range=(0.8, 2.0),
+            healthy_z_range=(0.5, 1.2),
             reset_noise_scale=1e-3,
-            exclude_current_positions_from_observation=True,
+            exclude_current_positions_from_observation=False,
             **kwargs,
     ):
         self._forward_reward_weight = forward_reward_weight
@@ -47,6 +49,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_reward = healthy_reward
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
+        self.timestamp = 0
+
 
         self._reset_noise_scale = reset_noise_scale
 
@@ -56,11 +60,11 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         if exclude_current_positions_from_observation:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(1003,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(78, ), dtype=np.float64
             )
         else:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(1005,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(80, ), dtype=np.float64
             )
 
         MujocoEnv.__init__(
@@ -71,6 +75,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
+        # overriding action space
+        self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
         # print(self.action_space.shape)
         self.ref_trajectory = DigitTrajectory("reference_trajectories/digit_state_downsample.csv")
         
@@ -78,7 +84,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         self.init_qpos = initial_qpos
         self.init_qvel = initial_qvel
-        
+        self.ref_qpos = initial_qpos
+        self.ref_qvel = initial_qvel
+
         # Index from README. The toes are actuated by motor A and B.
         self.p_index = [7, 8, 9, 14, 18, 23, 30, 31, 32, 33, 
                         34, 35, 36, 41, 45, 50, 57, 58, 59, 60]
@@ -102,7 +110,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
     def is_healthy(self):
         min_z, max_z = self._healthy_z_range
         is_healthy = min_z < self.data.qpos[2] < max_z
-
+        is_healthy = is_healthy and (not np.allclose(self.data.cfrc_ext.flat.copy(), 0))
         return is_healthy
 
     @property
@@ -111,8 +119,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         return terminated
 
     def _get_obs(self):
-        position = self.data.qpos.flat.copy()
-        velocity = self.data.qvel.flat.copy()
+        position = self.data.qpos.flat.copy()[self.p_index]
+        velocity = self.data.qvel.flat.copy()[self.v_index]
+
+        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp+1)
 
         com_inertia = self.data.cinert.flat.copy()
         com_velocity = self.data.cvel.flat.copy()
@@ -127,10 +137,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             (
                 position,
                 velocity,
-                com_inertia,
-                com_velocity,
-                actuator_forces,
-                external_contact_forces,
+                ref_qpos[self.p_index],
+                ref_qvel[self.v_index],
             )
         )
 
@@ -138,43 +146,44 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # Set the control target, this userdata is used by PD control callback.
         self.data.userdata[:] = ctrl
 
-        mujoco.mj_step(self.model, self.data, nstep=n_frames)
+        mj_step(self.model, self.data, nstep=n_frames)
 
         # As of MuJoCo 2.0, force-related quantities like cacc are not computed
         # unless there's a force sensor in the model.
         # See https://github.com/openai/gym/issues/1541
-        mujoco.mj_rnePostConstraint(self.model, self.data)
+        mj_rnePostConstraint(self.model, self.data)
         
     def step(self, action):
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
+        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp+1)
+        self.ref_qpos = ref_qpos
+        self.ref_qvel = ref_qvel
         self.timestamp += 1
         
         xy_position_before = mass_center(self.model, self.data)
-        
-        # self.do_simulation(np.zeros(20), self.frame_skip)
+        # print(action)
         q_pos_modified = action + ref_qpos[self.p_index]
+        self.frame_skip = 5
         self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
         
-        position = self.data.qpos.flat.copy()
-        rod_index = [10,11,12,13, 19,20,21,22, 24,25,26,27, 
-                     37,38,39,40, 46,47,48,49, 51,52,53,54]
-        ref_qpos[rod_index] = position[rod_index]
-        self.set_state(ref_qpos, ref_qvel)
+        # rod_index = [10,11,12,13, 19,20,21,22, 24,25,26,27, 
+        #              37,38,39,40, 46,47,48,49, 51,52,53,54]
         
         xy_position_after = mass_center(self.model, self.data)
 
         xy_velocity = (xy_position_after - xy_position_before) / self.dt
         x_velocity, y_velocity = xy_velocity
 
-        ctrl_cost = self.control_cost(action)
+        ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
         forward_reward = self._forward_reward_weight * x_velocity
         healthy_reward = self.healthy_reward
+        tracking_reward = \
+            0.5 * np.exp(-np.linalg.norm(ref_qpos[self.p_index] - self.data.qpos[self.p_index], ord=2)) + \
+            0.3 * np.exp(-np.linalg.norm(ref_qvel[self.v_index] - self.data.qvel[self.v_index], ord=2)) + \
+            0.2 * np.exp(-np.linalg.norm(ref_qpos[:3] - self.data.qpos[:3], ord=2))
 
-        rewards = forward_reward + healthy_reward
-
+        reward = forward_reward + healthy_reward + tracking_reward - ctrl_cost
         observation = self._get_obs()
-        reward = rewards - ctrl_cost
         terminated = self.terminated
         info = {
             "reward_linvel": forward_reward,
@@ -196,12 +205,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         noise_low = -self._reset_noise_scale
         noise_high = self._reset_noise_scale
 
-        qpos = self.init_qpos + self.np_random.uniform(
-            low=noise_low, high=noise_high, size=self.model.nq
-        )
-        qvel = self.init_qvel + self.np_random.uniform(
-            low=noise_low, high=noise_high, size=self.model.nv
-        )
+        qpos = self.init_qpos 
+        qvel = self.init_qvel 
         self.set_state(qpos, qvel)
 
         self.timestamp = 0
