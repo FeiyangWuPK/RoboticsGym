@@ -58,6 +58,10 @@
     <geom conaffinity='0' condim='1' contype='0' solref='0.02 1' />
     <joint solreflimit='0.001 1' />
   </default>
+  
+  <!-- https://github.com/deepmind/mujoco/issues/351 -->
+  <size nuserdata="20"/>
+
   <worldbody>
     <geom name='ground' type='plane' size='0 0 1' conaffinity='127' condim='3' friction='0.7 0.01 0.005' pos='0 0 0' priority='100' />
     <body name='torso/base' pos='0 0 0' euler='-0 0 -0'>
