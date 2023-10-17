@@ -146,3 +146,5 @@ dmypy.json
 logs/*
 wandb/*
 MUJOCO_LOG.TXT
+
+.vscode/*
