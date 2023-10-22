@@ -68,7 +68,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
         self.frame_skip = 60
         MujocoEnv.__init__(
             self,
-            os.getcwd()+"/cassie.xml",
+            os.getcwd()+"/xml/cassie.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,

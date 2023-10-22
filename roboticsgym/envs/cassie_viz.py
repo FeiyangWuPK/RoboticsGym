@@ -65,7 +65,7 @@ class CassieEnv(MujocoEnv, utils.EzPickle):
 
         MujocoEnv.__init__(
             self,
-            os.getcwd()+"/scene.xml",
+            os.getcwd()+"/xml/scene.xml",
             5,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
