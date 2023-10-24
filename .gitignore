@@ -147,4 +147,4 @@ logs/*
 wandb/*
 MUJOCO_LOG.TXT
 
-.vscode/*
+
