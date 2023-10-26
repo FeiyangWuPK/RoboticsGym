@@ -6,7 +6,12 @@ from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecNormalize
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    SubprocVecEnv,
+    VecEnv,
+    VecNormalize,
+)
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
@@ -19,35 +24,45 @@ from wandb.integration.sb3 import WandbCallback
 from ipmd import IPMD
 
 
-register(id='Digit-v1',
-		entry_point='digit:DigitEnv',
-		max_episode_steps=1000,
-		autoreset=True,)
+register(
+    id="Digit-v1",
+    entry_point="digit:DigitEnv",
+    max_episode_steps=1000,
+    autoreset=True,
+)
 
-register(id='Cassie-v1',
-		entry_point='cassie:CassieEnv',
-		max_episode_steps=600,
-		autoreset=True,)
+register(
+    id="Cassie-v1",
+    entry_point="cassie:CassieEnv",
+    max_episode_steps=600,
+    autoreset=True,
+)
 
-register(id='MjCassie-v2',
-		entry_point='mj_cassie:CassieEnv',
-		max_episode_steps=600,
-		autoreset=True,)
+register(
+    id="MjCassie-v2",
+    entry_point="mj_cassie:CassieEnv",
+    max_episode_steps=600,
+    autoreset=True,
+)
 
 # register(id='CassieViz-v1',
 # 		entry_point='cassie_viz:CassieEnv',
 # 		max_episode_steps=1000,
 # 		autoreset=True,)
 
-register(id='OldCassie-v1',
-		entry_point='oldcassie:OldCassieMirrorEnv',
-		max_episode_steps=600,
-		autoreset=True,)
+register(
+    id="OldCassie-v1",
+    entry_point="oldcassie:OldCassieMirrorEnv",
+    max_episode_steps=600,
+    autoreset=True,
+)
 
-register(id='OldCassie-v2',
-		entry_point='oldcassie_v2:OldCassieMirrorEnv',
-		max_episode_steps=600,
-		autoreset=True,)
+register(
+    id="OldCassie-v2",
+    entry_point="oldcassie_v2:OldCassieMirrorEnv",
+    max_episode_steps=600,
+    autoreset=True,
+)
 
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
@@ -58,6 +73,7 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
     :return: schedule that computes
       current learning rate depending on remaining progress
     """
+
     def func(progress_remaining: float) -> float:
         """
         Progress will decrease from 1 (beginning) to 0.
@@ -69,99 +85,154 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
 
     return func
 
+
 def load_best_and_visualize():
-	env = make_vec_env("MjCassie-v2", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
-	best_irl_model = SAC("MlpPolicy",
-				env,
-				verbose=1,
-				learning_rate=1e-3,
-				train_freq=600)
-	best_irl_model.set_parameters("logs/best_model.zip")
-	_, callback = best_irl_model._setup_learn(600, callback=None, )
-	best_irl_model.collect_rollouts(best_irl_model.env,
-                train_freq=best_irl_model.train_freq,
-                action_noise=best_irl_model.action_noise,
-                callback=callback,
-                learning_starts=0,
-                replay_buffer=best_irl_model.replay_buffer,
-                log_interval=1,)
-	
+    env = make_vec_env(
+        "MjCassie-v2",
+        n_envs=1,
+        env_kwargs={
+            "exclude_current_positions_from_observation": False,
+            "render_mode": "human",
+        },
+    )
+    best_irl_model = SAC(
+        "MlpPolicy", env, verbose=1, learning_rate=1e-3, train_freq=600
+    )
+    best_irl_model.set_parameters("logs/best_model.zip")
+    _, callback = best_irl_model._setup_learn(
+        600,
+        callback=None,
+    )
+    best_irl_model.collect_rollouts(
+        best_irl_model.env,
+        train_freq=best_irl_model.train_freq,
+        action_noise=best_irl_model.action_noise,
+        callback=callback,
+        learning_starts=0,
+        replay_buffer=best_irl_model.replay_buffer,
+        log_interval=1,
+    )
+
+
 def visualize_reference_traj():
-	env = make_vec_env("CassieViz-v1", n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, 'render_mode': 'human'})
-	model = SAC("MlpPolicy",
-				env,
-				verbose=0,
-				learning_rate=1e-3,)
-	evaluate_policy(model, env, render=True, n_eval_episodes=10)
+    env = make_vec_env(
+        "CassieViz-v1",
+        n_envs=1,
+        env_kwargs={
+            "exclude_current_positions_from_observation": False,
+            "render_mode": "human",
+        },
+    )
+    model = SAC(
+        "MlpPolicy",
+        env,
+        verbose=0,
+        learning_rate=1e-3,
+    )
+    evaluate_policy(model, env, render=True, n_eval_episodes=10)
+
 
 def train_model():
-	config = {
-		"policy_type": "MlpPolicy",	
-		"total_timesteps": int(1e7),
-		"env_id": "MjCassie-v2",
-		"progress_bar": True,
-		"verbose": 0,
-		"learning_rate": linear_schedule(5e-3),
-		"n_envs": 24,
-	}
-	run = wandb.init(
-		project="New cassie env",
-		config=config,
-		name=f'{time.strftime("%m%d%H%M")}-PDController',
-		sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-		# monitor_gym=True,  # auto-upload the videos of agents playing the game
-		notes="with PD controller, and with additional observational space",
-		save_code=True,  # optional
-	)
-	wandb.run.log_code(".")
-	wandbcallback = WandbCallback(
-			# model_save_path=f"models/{run.id}",
-			# model_save_freq=2000,
-			# gradient_save_freq=2000,
-			verbose=2,
-		)
-	env = make_vec_env(config['env_id'], n_envs=config['n_envs'], vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': False, })
-	# Separate evaluation env
-	eval_env = make_vec_env(config['env_id'], n_envs=1, vec_env_cls=SubprocVecEnv, env_kwargs={'exclude_current_positions_from_observation': False, })
-	# Use deterministic actions for evaluation
-	eval_callback = EvalCallback(eval_env, best_model_save_path=f"logs/{run.name}/",
-									log_path=f"logs/{run.name}/", eval_freq=5000,
-									deterministic=True, render=False)
-	callback_list = CallbackList([eval_callback, wandbcallback])
-	# Init model
-	model = SAC("MlpPolicy",
-				env,
-				verbose=config["verbose"],
-				# ent_coef=0.01,
-				learning_rate=config['learning_rate'],
-				tensorboard_log=f'logs/tensorboard/{run.name}/',)
-	
-	model.learn(
-		total_timesteps=config["total_timesteps"],
-		callback=callback_list,
-		progress_bar=config["progress_bar"],
-		# log_interval=100,
-	)
-	run.finish()
+    config = {
+        "policy_type": "MlpPolicy",
+        "total_timesteps": int(1e7),
+        "env_id": "MjCassie-v2",
+        "progress_bar": True,
+        "verbose": 0,
+        "learning_rate": linear_schedule(5e-3),
+        "n_envs": 24,
+    }
+    run = wandb.init(
+        project="New cassie env",
+        config=config,
+        name=f'{time.strftime("%m%d%H%M")}-PDController',
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        # monitor_gym=True,  # auto-upload the videos of agents playing the game
+        notes="with PD controller, and with additional observational space",
+        save_code=True,  # optional
+    )
+    wandb.run.log_code(".")
+    wandbcallback = WandbCallback(
+        # model_save_path=f"models/{run.id}",
+        # model_save_freq=2000,
+        # gradient_save_freq=2000,
+        verbose=2,
+    )
+    env = make_vec_env(
+        config["env_id"],
+        n_envs=config["n_envs"],
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "exclude_current_positions_from_observation": False,
+        },
+    )
+    # Separate evaluation env
+    eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "exclude_current_positions_from_observation": False,
+        },
+    )
+    # Use deterministic actions for evaluation
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=f"logs/{run.name}/",
+        log_path=f"logs/{run.name}/",
+        eval_freq=5000,
+        deterministic=True,
+        render=False,
+    )
+    callback_list = CallbackList([eval_callback, wandbcallback])
+    # Init model
+    model = SAC(
+        "MlpPolicy",
+        env,
+        verbose=config["verbose"],
+        # ent_coef=0.01,
+        learning_rate=config["learning_rate"],
+        tensorboard_log=f"logs/tensorboard/{run.name}/",
+    )
+
+    model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=callback_list,
+        progress_bar=config["progress_bar"],
+        # log_interval=100,
+    )
+    run.finish()
+
 
 # Test old cassie v2
 def test_old_cassie_v2():
-	env = make_vec_env("OldCassie-v1", n_envs=1, env_kwargs={'visual': True})
-	eval_env = gym.make('OldCassie-v1', visual=True)
-	model = IPMD.load("logs/IRL IPMD Param Optimization/2023-07-28-13-56-28/best_model.zip", env=env)
-	_, callback = model._setup_learn(600, callback=None, )
-	mean_reward, std = evaluate_policy(model, eval_env, render=False, n_eval_episodes=5)
-	print(f'Mean reward: {mean_reward}, std: {std}')
+    env = make_vec_env("OldCassie-v1", n_envs=1, env_kwargs={"visual": True})
+    eval_env = gym.make("OldCassie-v1", visual=True)
+    model = IPMD.load(
+        "logs/IRL IPMD Param Optimization/2023-07-28-13-56-28/best_model.zip", env=env
+    )
+    _, callback = model._setup_learn(
+        600,
+        callback=None,
+    )
+    mean_reward, std = evaluate_policy(model, eval_env, render=False, n_eval_episodes=5)
+    print(f"Mean reward: {mean_reward}, std: {std}")
 
 
 def test_digit():
-	env = make_vec_env('Digit-v1', n_envs=1, env_kwargs={'exclude_current_positions_from_observation': False, })
-	model = SAC("MlpPolicy", env, verbose=1)
-	model.learn(total_timesteps=1e6, log_interval=10, progress_bar=True)
+    env = make_vec_env(
+        "Digit-v1",
+        n_envs=1,
+        env_kwargs={
+            "exclude_current_positions_from_observation": False,
+        },
+    )
+    model = SAC("MlpPolicy", env, verbose=1)
+    model.learn(total_timesteps=1e6, log_interval=10, progress_bar=True)
+
 
 if __name__ == "__main__":
-	# train_model()
-	# load_best_and_visualize()
-	# test_old_cassie_v2()
+    # train_model()
+    # load_best_and_visualize()
+    # test_old_cassie_v2()
     test_digit()
-		
