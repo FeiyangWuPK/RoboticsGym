@@ -124,9 +124,6 @@ class JetBotEnv(gym.Env):
         current_jetbot_position, _ = self.jetbot.get_world_pose()
         previous_dist_to_goal = (
             np.linalg.norm(goal_world_position - previous_jetbot_position)
-            / home
-            / user
-            / OmniIsaacGymEnvs,
         )
         current_dist_to_goal = np.linalg.norm(
             goal_world_position - current_jetbot_position

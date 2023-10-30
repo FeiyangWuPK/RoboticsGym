@@ -709,7 +709,7 @@
     "${env:ISAAC_PATH}/kit/plugins/bindings-python"
   ]
 
-  //   "python.languageServer": "Pylance",
+    "python.languageServer": "Pylance",
   //   "python.defaultInterpreterPath": "${workspaceFolder}/kit/python/bin/python3",
   // python.pythonPath is deprecated
   // "python.pythonPath": "${workspaceFolder}/kit/python/bin/python3",
