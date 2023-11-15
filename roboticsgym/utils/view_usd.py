@@ -27,5 +27,5 @@ def view_usd_file(usd_file_path):
 
 
 if __name__ == "__main__":
-    usd_file_path = "/home/feiyang/Research/Robotics/OmniIsaacGymEnvs-Bipedal/omniisaacgymenvs/assets/USD/digit/digit_float.usd"  # Replace with the path to your USD file
+    usd_file_path = "/home/feiyang/Documents/Repositories/OmniIsaacGymEnvs-Bipedal/omniisaacgymenvs/assets/USD/cassie/cassie.usd"  # Replace with the path to your USD file
     view_usd_file(usd_file_path)
