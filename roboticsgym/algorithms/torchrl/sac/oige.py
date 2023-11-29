@@ -93,7 +93,9 @@ class OIGEWrapper(GymWrapper):
             get_experience,
         )
 
-        cfg = omegaconf.OmegaConf.load("../configs/config.yaml")
+        cfg = omegaconf.OmegaConf.load(
+            "/home/feiyang/Documents/Repositories/RoboticsGym/roboticsgym/algorithms/torchrl/sac/config.yaml"
+        )
         cls.cfg = cfg
         cfg.task = task
         cfg.num_envs = num_envs
@@ -110,9 +112,10 @@ class OIGEWrapper(GymWrapper):
         if cfg.multi_gpu:
             cfg.device_id = local_rank
             cfg.rl_device = f"cuda:{local_rank}"
-        enable_viewport = (
-            "enable_cameras" in cfg.task.sim and cfg.task.sim.enable_cameras
-        )
+        enable_viewport = False
+        # (
+        #     "enable_cameras" in cfg.task.sim and cfg.task.sim.enable_cameras
+        # )
 
         # select kit app file
         experience = get_experience(
@@ -225,14 +228,15 @@ class OIGEWrapper(GymWrapper):
             observations = {key: observations}
         return observations
 
-    def __del__(self):
-        self.envs.close()
+    # Doesn't seem to be necessary
+    # def __del__(self):
+    #     self.envs.close()
 
-        if self.cfg.wandb_activate and self.global_rank == 0:
-            import wandb
+    #     if self.cfg.wandb_activate and self.global_rank == 0:
+    #         import wandb
 
-            wandb.finish()
-        return super().__del__()
+    #         wandb.finish()
+    #     return super().__del__()
 
 
 class OmniIsaacGymEnv(OIGEWrapper):
@@ -265,6 +269,7 @@ class OmniIsaacGymEnv(OIGEWrapper):
             raise RuntimeError("Cannot provide both `task` and `env` arguments.")
         elif env is not None:
             task = env
+        # print("In OmniIsaacGymEnv.__init__, task = ", task)
         envs = self._make_envs(task=task, num_envs=num_envs, device=device, **kwargs)
         self.task = task
         super().__init__(envs, **kwargs)

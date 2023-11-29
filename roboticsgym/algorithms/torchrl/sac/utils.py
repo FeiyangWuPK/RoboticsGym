@@ -27,6 +27,7 @@ from torchrl.modules.distributions import TanhNormal
 from torchrl.objectives import SoftUpdate
 from torchrl.objectives.sac import SACLoss
 
+from oige import OmniIsaacGymEnv, OIGEWrapper
 
 # ====================================================================
 # Environment utils
@@ -45,6 +46,10 @@ def env_maker(cfg, device="cpu"):
         env = DMControlEnv(cfg.env.name, cfg.env.task)
         return TransformedEnv(
             env, CatTensors(in_keys=env.observation_spec.keys(), out_key="observation")
+        )
+    elif lib == "omniisaacgymenvs":
+        env = OmniIsaacGymEnv(
+            task=cfg.env.name, num_envs=cfg.env.num_envs, device=device
         )
     else:
         raise NotImplementedError(f"Unknown lib {lib}.")
