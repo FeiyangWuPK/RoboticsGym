@@ -154,7 +154,7 @@ class HIP(OffPolicyAlgorithm):
         _init_setup_model: bool = True,
         expert_replaybuffer: str = "",
         expert_replaybuffersize: int = 6000,
-        student_begin: int = int(5e6),
+        student_begin: int = int(0),
         reward_reg_param: float = 0.05
     ):
         super().__init__(
@@ -209,7 +209,7 @@ class HIP(OffPolicyAlgorithm):
         self.student_irl_begin_timesteps = student_begin
 
         self.reward_reg_param = reward_reg_param
-
+        
         if _init_setup_model:
             self._setup_model()
     
@@ -476,7 +476,7 @@ class HIP(OffPolicyAlgorithm):
             else:
                 student_ent_coef = self.student_ent_coef_tensor
 
-            # student_ent_coefs.append(student_ent_coef.item())
+            student_ent_coefs.append(student_ent_coef.item())
 
             # Optimize entropy coefficient, also called
             # entropy temperature or alpha in the paper
