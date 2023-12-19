@@ -78,6 +78,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         difficulty_level: int = 1,
         terrain_file_path: str = "terrain_sine_t0.png",
         log_file_path: str | None = None,
+        domain_randomization_scale: float = 0.0,
         **kwargs,
     ):
         utils.EzPickle.__init__(
@@ -127,6 +128,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.whole_state_buffer = []
         self.useful_recorded_data = []
         self.state_buffer = []
+        self.domain_randomization_scale = domain_randomization_scale
         self.delay = False
         self.buffer_size = 20
         self.noisy = False
@@ -457,8 +459,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.counter = 0
         cassie_sim_free(self.sim.c)
         self.sim.c = cassie_sim_init(self.model_xml_path.encode("utf-8"), False)
-        # Aug 14: randomize the terrain every time sim initializes
-        # self.sim.randomize_terrain()
+
         qpos, qvel = self.get_kin_state()
         qpos[3:7] = quaternion
         self.sim.set_qpos(qpos)
@@ -466,6 +467,14 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.cassie_state = self.sim.step_pd(self.u)
 
         return self._get_obs(), dict()
+
+    def apply_randomization(self, obs: np.ndarray) -> np.ndarray:
+        if self.domain_randomization_scale == 0:
+            return obs
+        else:
+            return obs + np.random.normal(
+                scale=self.domain_randomization_scale * np.abs(obs), size=obs.shape
+            )
 
     def _get_obs(self):
         state = self.cassie_state
@@ -510,6 +519,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                     ]
                 )
             )
+            useful_state = self.apply_randomization(useful_state)
             return np.concatenate(
                 [useful_state, ref_pos[pos_index], ref_vel[vel_index]]
             )
@@ -608,6 +618,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                 )
             )
 
+            useful_state = self.apply_randomization(useful_state)
             return np.concatenate(
                 [useful_state, ref_pos[pos_index], ref_vel[vel_index]]
             )
