@@ -7,11 +7,12 @@ import torch.nn as nn
 import gymnasium as gym
 from gymnasium import utils
 import datetime
-import pickle
+from typing import Any, Union
+from gymnasium import spaces
 
-from old_cassie.cassie_m.cassiemujoco import CassieSim, CassieVis
-from old_cassie.cassie_env.loadstep import CassieTrajectory
-from old_cassie.cassie_env.quaternion_function import (
+from roboticsgym.envs.old_cassie.cassie_m.cassiemujoco import CassieSim, CassieVis
+from roboticsgym.envs.old_cassie.cassie_env.loadstep import CassieTrajectory
+from roboticsgym.envs.old_cassie.cassie_env.quaternion_function import (
     euler2quat,
     inverse_quaternion,
     quaternion_product,
@@ -19,13 +20,16 @@ from old_cassie.cassie_env.quaternion_function import (
     rotate_by_quaternion,
     quat2yaw,
 )
-from old_cassie.cassie_m.cassiemujoco import (
+from roboticsgym.envs.old_cassie.cassie_m.cassiemujoco import (
     pd_in_t,
     state_out_t,
     CassieSim,
     CassieVis,
 )
-from old_cassie.cassie_m.cassiemujoco_ctypes import cassie_sim_init, cassie_sim_free
+from roboticsgym.envs.old_cassie.cassie_m.cassiemujoco_ctypes import (
+    cassie_sim_init,
+    cassie_sim_free,
+)
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
@@ -35,11 +39,15 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 
-
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
     xpos = data.xipos
     return (np.sum(mass * xpos, axis=0) / np.sum(mass))[0:2].copy()
+
+
+DEFAULT_CAMERA_CONFIG = {
+    "distance": 4.0,
+}
 
 
 class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
@@ -54,7 +62,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
     def __init__(
         self,
-        xml_path,
+        xml_path="roboticsgym/envs/xml/cassie.xml",
         forward_reward_weight=1.25,
         ctrl_cost_weight=0.1,
         healthy_reward=5.0,
@@ -69,9 +77,29 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         enhanced_reward: str = "naive",
         difficulty_level: int = 1,
         terrain_file_path: str = "terrain_sine_t0.png",
-        log_file_path: str = None,
+        log_file_path: str | None = None,
         **kwargs,
     ):
+        utils.EzPickle.__init__(
+            self,
+            xml_path,
+            forward_reward_weight,
+            ctrl_cost_weight,
+            healthy_reward,
+            terminate_when_unhealthy,
+            healthy_z_range,
+            reset_noise_scale,
+            random_state,
+            visual,
+            visual_record,
+            record_for_reward_inference,
+            random_terrain,
+            enhanced_reward,
+            difficulty_level,
+            terrain_file_path,
+            log_file_path,
+            **kwargs,
+        )
         self.model_xml_path = xml_path
         self.random_terrain = random_terrain
         self.sim = CassieSim(
@@ -84,8 +112,9 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.random_state = random_state
         self.enhance_reward = enhanced_reward
         self.log_file_path = log_file_path
-
-        if self.visual:
+        if self.render_mode is not None:
+            print(self.render_mode)
+        if self.visual or self.render_mode is not None:
             print("Visualizing")
             self.vis = CassieVis(self.sim)
             if self.visual_record:
@@ -108,13 +137,18 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.max_phase = 28
         self.control_rate = 60
         self.time_limit = 400 * 60 / self.control_rate
-        self.trajectory = CassieTrajectory("old_cassie/trajectory/stepdata.bin")
+        self.trajectory = CassieTrajectory(
+            "roboticsgym/envs/old_cassie/trajectory/stepdata.bin"
+        )
 
-        
         self.x_vel_sum = 0
-        with open("old_cassie/trajectory/stepping_trajectory_Nov", "rb") as fp:
+        with open(
+            "roboticsgym/envs/old_cassie/trajectory/stepping_trajectory_Nov", "rb"
+        ) as fp:
             self.step_in_place_trajectory = pickle.load(fp)
-        with open("old_cassie/trajectory/backward_trajectory_Nov", "rb") as fp:
+        with open(
+            "roboticsgym/envs/old_cassie/trajectory/backward_trajectory_Nov", "rb"
+        ) as fp:
             self.backward_trajectory = pickle.load(fp)
         self.side_speed = 0
         for i in range(1682):
@@ -218,18 +252,15 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.P = np.array([100, 100, 88, 96, 50, 100, 100, 88, 96, 50])
         self.D = np.array([10.0, 10.0, 8.0, 9.6, 5.0, 10.0, 10.0, 8.0, 9.6, 5.0])
 
-        
         self.record_for_reward_inference = record_for_reward_inference
         # Set observation and action space
-        self.observation_space = gym.spaces.Box(
+        self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
             shape=(self._get_obs().shape[0],),
             dtype=np.float64,
         )
-        self.action_space = gym.spaces.Box(
-            low=-1, high=1, shape=(10,), dtype=np.float32
-        )
+        self.action_space = spaces.Box(low=-1, high=1, shape=(10,), dtype=np.float32)
 
         """
         Position [1], [2] 				-> Pelvis y, z
@@ -395,6 +426,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         return pose, vel
 
     def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
         if self.time != 0:
             self.rew_ref_buf = self.rew_ref / self.time
             self.rew_spring_buf = self.rew_spring / self.time
@@ -685,7 +717,6 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
         return 0.5 * forward_reward - ctrl_cost + alive_reward
 
-
     def step(self, action):
         self.current_action = action
         for _ in range(self.control_rate):
@@ -724,8 +755,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             self.render()
 
         reward = self.compute_reward()
-        
-        
+
         if done and self.record_for_reward_inference:
             # save the whole state_buffer for reward inference
             import time
@@ -748,12 +778,12 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         return self._get_obs(), reward, done, False, {}
 
     def render(self):
-        draw_state = self.vis.draw(self.sim)
-        if self.visual_record:
-            self.vis.record_frame()
-        return draw_state
+        if self.visual or self.render_mode is not None:
+            draw_state = self.vis.draw(self.sim)
+            if self.visual_record:
+                self.vis.record_frame()
+            return draw_state
 
     def close(self):
         if self.visual_record:
             self.vis.close_recording()
-
