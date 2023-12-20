@@ -5,7 +5,10 @@ import torch as th
 from gymnasium import spaces
 from torch import nn
 
-from stable_baselines3.common.distributions import SquashedDiagGaussianDistribution, StateDependentNoiseDistribution
+from stable_baselines3.common.distributions import (
+    SquashedDiagGaussianDistribution,
+    StateDependentNoiseDistribution,
+)
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
 from stable_baselines3.common.preprocessing import get_action_dim
 from stable_baselines3.common.torch_layers import (
@@ -22,6 +25,70 @@ from stable_baselines3.common.policies import BaseModel
 # CAP the standard deviation of the actor
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
+
+
+class RewardEstimation(BaseModel):
+    """
+    Reward estimation network(s) for DDPG/SAC/TD3.
+
+    :param observation_space: Obervation space
+    :param action_space: Action space
+    :param net_arch: Network architecture
+    :param features_extractor: Network to extract features
+        (a CNN when using images, a nn.Flatten() layer otherwise)
+    :param features_dim: Number of features
+    :param activation_fn: Activation function
+    :param normalize_images: Whether to normalize images or not,
+         dividing by 255.0 (True by default)
+    :param n_critics: Number of critic networks to create.
+    :param share_features_extractor: Whether the features extractor is shared or not
+        between the actor and the critic (this saves computation time)
+    """
+
+    def __init__(
+        self,
+        observation_space: spaces.Space,
+        action_space: spaces.Box,
+        net_arch: List[int],
+        features_extractor: BaseFeaturesExtractor,
+        features_dim: int,
+        activation_fn: Type[nn.Module] = nn.ReLU,
+        normalize_images: bool = True,
+        n_critics: int = 1,
+        share_features_extractor: bool = True,
+        state_only: bool = False,
+    ):
+        super().__init__(
+            observation_space,
+            action_space,
+            features_extractor=features_extractor,
+            normalize_images=normalize_images,
+        )
+
+        action_dim = get_action_dim(self.action_space)
+
+        self.share_features_extractor = share_features_extractor
+        self.n_critics = n_critics
+        self.r_networks = []
+        for idx in range(n_critics):
+            if state_only:
+                r_net = create_mlp(features_dim, 1, net_arch, activation_fn)
+            else:
+                r_net = create_mlp(
+                    features_dim + action_dim, 1, net_arch, activation_fn
+                )
+            r_net = nn.Sequential(*r_net)
+            self.add_module(f"rf{idx}", r_net)
+            # self.add_module('output', nn.Tanh())
+            self.r_networks.append(r_net)
+
+    def forward(self, obs: th.Tensor, actions: th.Tensor) -> Tuple[th.Tensor, ...]:
+        # Learn the features extractor using the policy loss only
+        # when the features_extractor is shared with the actor
+        with th.set_grad_enabled(not self.share_features_extractor):
+            features = self.extract_features(obs, self.features_extractor)
+        rvalue_input = th.cat([features, actions], dim=1)
+        return tuple(r_net(rvalue_input) for r_net in self.r_networks)
 
 
 class Actor(BasePolicy):
@@ -90,15 +157,23 @@ class Actor(BasePolicy):
 
         if self.use_sde:
             self.action_dist = StateDependentNoiseDistribution(
-                action_dim, full_std=full_std, use_expln=use_expln, learn_features=True, squash_output=True
+                action_dim,
+                full_std=full_std,
+                use_expln=use_expln,
+                learn_features=True,
+                squash_output=True,
             )
             self.mu, self.log_std = self.action_dist.proba_distribution_net(
-                latent_dim=last_layer_dim, latent_sde_dim=last_layer_dim, log_std_init=log_std_init
+                latent_dim=last_layer_dim,
+                latent_sde_dim=last_layer_dim,
+                log_std_init=log_std_init,
             )
             # Avoid numerical issues by limiting the mean of the Gaussian
             # to be in [-clip_mean, clip_mean]
             if clip_mean > 0.0:
-                self.mu = nn.Sequential(self.mu, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean))
+                self.mu = nn.Sequential(
+                    self.mu, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean)
+                )
         else:
             self.action_dist = SquashedDiagGaussianDistribution(action_dim)  # type: ignore[assignment]
             self.mu = nn.Linear(last_layer_dim, action_dim)
@@ -146,7 +221,9 @@ class Actor(BasePolicy):
         assert isinstance(self.action_dist, StateDependentNoiseDistribution), msg
         self.action_dist.sample_weights(self.log_std, batch_size=batch_size)
 
-    def get_action_dist_params(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
+    def get_action_dist_params(
+        self, obs: th.Tensor
+    ) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
         """
         Get the parameters for the action distribution.
 
@@ -169,14 +246,18 @@ class Actor(BasePolicy):
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs)
         # Note: the action is squashed
-        return self.action_dist.actions_from_params(mean_actions, log_std, deterministic=deterministic, **kwargs)
+        return self.action_dist.actions_from_params(
+            mean_actions, log_std, deterministic=deterministic, **kwargs
+        )
 
     def action_log_prob(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs)
         # return action and associated log prob
         return self.action_dist.log_prob_from_params(mean_actions, log_std, **kwargs)
 
-    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self, observation: th.Tensor, deterministic: bool = False
+    ) -> th.Tensor:
         return self(observation, deterministic)
 
 
@@ -231,6 +312,7 @@ class IPMDPolicy(BasePolicy):
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
         n_critics: int = 2,
         share_features_extractor: bool = False,
+        state_only_reward: bool = False,
     ):
         super().__init__(
             observation_space,
@@ -275,6 +357,14 @@ class IPMDPolicy(BasePolicy):
             }
         )
 
+        self.reward_est_kwargs = self.critic_kwargs.copy()
+        self.reward_est_kwargs.update(
+            {
+                "n_critics": 1,
+                "state_only": state_only_reward,
+            }
+        )
+
         self.share_features_extractor = share_features_extractor
 
         self._build(lr_schedule)
@@ -290,10 +380,16 @@ class IPMDPolicy(BasePolicy):
         self.old_actor.optimizer = None
 
         if self.share_features_extractor:
-            self.critic = self.make_critic(features_extractor=self.actor.features_extractor)
+            self.critic = self.make_critic(
+                features_extractor=self.actor.features_extractor
+            )
             # Do not optimize the shared features extractor with the critic loss
             # otherwise, there are gradient computation issues
-            critic_parameters = [param for name, param in self.critic.named_parameters() if "features_extractor" not in name]
+            critic_parameters = [
+                param
+                for name, param in self.critic.named_parameters()
+                if "features_extractor" not in name
+            ]
         else:
             # Create a separate features extractor for the critic
             # this requires more memory and computation
@@ -317,7 +413,9 @@ class IPMDPolicy(BasePolicy):
         # Target networks should always be in eval mode
         self.critic_target.set_training_mode(False)
 
-        self.reward_est.optimizer = self.optimizer_class(reward_parameters, lr=lr_schedule(3e-5), **self.optimizer_kwargs)
+        self.reward_est.optimizer = self.optimizer_class(
+            reward_parameters, lr=lr_schedule(3e-5), **self.optimizer_kwargs
+        )
 
     def _get_constructor_parameters(self) -> Dict[str, Any]:
         data = super()._get_constructor_parameters()
@@ -348,28 +446,36 @@ class IPMDPolicy(BasePolicy):
         """
         self.actor.reset_noise(batch_size=batch_size)
 
-    def make_actor(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> Actor:
-        actor_kwargs = self._update_features_extractor(self.actor_kwargs, features_extractor)
+    def make_actor(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> Actor:
+        actor_kwargs = self._update_features_extractor(
+            self.actor_kwargs, features_extractor
+        )
         return Actor(**actor_kwargs).to(self.device)
 
-    def make_critic(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> ContinuousCritic:
-        critic_kwargs = self._update_features_extractor(self.critic_kwargs, features_extractor)
-        return ContinuousCritic(**critic_kwargs).to(self.device)
-    
-    def make_reward_est(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> ContinuousCritic:
-        self.reward_est_kwargs = self.critic_kwargs.copy()
-        self.reward_est_kwargs.update(
-            {
-                "n_critics": 1,
-            }
+    def make_critic(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> ContinuousCritic:
+        critic_kwargs = self._update_features_extractor(
+            self.critic_kwargs, features_extractor
         )
-        reward_est_kwargs = self._update_features_extractor(self.reward_est_kwargs, features_extractor)
+        return ContinuousCritic(**critic_kwargs).to(self.device)
+
+    def make_reward_est(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> RewardEstimation:
+        reward_est_kwargs = self._update_features_extractor(
+            self.reward_est_kwargs, features_extractor
+        )
         return RewardEstimation(**reward_est_kwargs).to(self.device)
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         return self._predict(obs, deterministic=deterministic)
 
-    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self, observation: th.Tensor, deterministic: bool = False
+    ) -> th.Tensor:
         return self.actor(observation, deterministic)
 
     def set_training_mode(self, mode: bool) -> None:
@@ -519,61 +625,3 @@ class MultiInputPolicy(IPMDPolicy):
             n_critics,
             share_features_extractor,
         )
-
-
-class RewardEstimation(BaseModel):
-    """
-    Reward estimation network(s) for DDPG/SAC/TD3.
-
-    :param observation_space: Obervation space
-    :param action_space: Action space
-    :param net_arch: Network architecture
-    :param features_extractor: Network to extract features
-        (a CNN when using images, a nn.Flatten() layer otherwise)
-    :param features_dim: Number of features
-    :param activation_fn: Activation function
-    :param normalize_images: Whether to normalize images or not,
-         dividing by 255.0 (True by default)
-    :param n_critics: Number of critic networks to create.
-    :param share_features_extractor: Whether the features extractor is shared or not
-        between the actor and the critic (this saves computation time)
-    """
-
-    def __init__(
-        self,
-        observation_space: spaces.Space,
-        action_space: spaces.Box,
-        net_arch: List[int],
-        features_extractor: BaseFeaturesExtractor,
-        features_dim: int,
-        activation_fn: Type[nn.Module] = nn.ReLU,
-        normalize_images: bool = True,
-        n_critics: int = 1,
-        share_features_extractor: bool = True,
-    ):
-        super().__init__(
-            observation_space,
-            action_space,
-            features_extractor=features_extractor,
-            normalize_images=normalize_images,
-        )
-
-        action_dim = get_action_dim(self.action_space)
-
-        self.share_features_extractor = share_features_extractor
-        self.n_critics = n_critics
-        self.r_networks = []
-        for idx in range(n_critics):
-            r_net = create_mlp(features_dim + action_dim, 1, net_arch, activation_fn)
-            r_net = nn.Sequential(*r_net)
-            self.add_module(f"rf{idx}", r_net)
-            # self.add_module('output', nn.Tanh())
-            self.r_networks.append(r_net)
-
-    def forward(self, obs: th.Tensor, actions: th.Tensor) -> Tuple[th.Tensor, ...]:
-        # Learn the features extractor using the policy loss only
-        # when the features_extractor is shared with the actor
-        with th.set_grad_enabled(not self.share_features_extractor):
-            features = self.extract_features(obs, self.features_extractor)
-        rvalue_input = th.cat([features, actions], dim=1)
-        return tuple(r_net(rvalue_input) for r_net in self.r_networks)

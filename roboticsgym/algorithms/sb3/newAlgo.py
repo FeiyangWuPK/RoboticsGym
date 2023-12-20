@@ -174,6 +174,7 @@ class HIP(OffPolicyAlgorithm):
         expert_replaybuffersize: int = 6000,
         student_begin: int = int(0),
         reward_reg_param: float = 0.05,
+        teacher_state_only_reward: bool = False,
     ):
         super().__init__(
             policy,
@@ -217,10 +218,13 @@ class HIP(OffPolicyAlgorithm):
         self.student_policy_kwargs = (
             {} if student_policy_kwargs is None else student_policy_kwargs
         )
+        self.teacher_state_only_reward = teacher_state_only_reward
 
         # Update policy keyword arguments
         self.policy_kwargs["use_sde"] = self.use_sde
         self.student_policy_kwargs["use_sde"] = self.use_sde
+        self.policy_kwargs["state_only_reward"] = self.teacher_state_only_reward
+        self.student_policy_kwargs["state_only_reward"] = self.teacher_state_only_reward
         self.clip_range = clip_range
 
         self.expert_replaybuffer = expert_replaybuffer
