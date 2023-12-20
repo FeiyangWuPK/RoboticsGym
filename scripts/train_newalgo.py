@@ -61,7 +61,7 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
 def train_cassie_v4():
     config = {
         "policy_type": "MlpPolicy",
-        "total_timesteps": 2e6,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v4",
         "buffer_size": 1000000,
         "train_freq": 3,
@@ -70,16 +70,16 @@ def train_cassie_v4():
         "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 3e-4,
+        "learning_rate": 5e-3,
         "n_envs": 24,
-        "batch_size": 256,
+        "batch_size": 300,
         "seed": 42,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable",
         "student_begin": int(0),
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
-        "reward_reg_param": 0.065,
+        "reward_reg_param": 0.05,
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
@@ -91,6 +91,7 @@ def train_cassie_v4():
         save_code=True,  # optional
         reinit=True,
         notes="student coef follows teacher and use off policy evaluation",
+        # mode="offline",
     )
     wandb.run.log_code(".")
 
@@ -177,10 +178,10 @@ def visualize_best_student():
         "progress_bar": True,
         "verbose": 1,
         "ent_coef": "auto",
-        "student_ent_coef": 0.01,
-        "learning_rate": 5e-3,
-        "n_envs": 1,
-        "batch_size": 512,
+        "student_ent_coef": "auto",
+        "learning_rate": linear_schedule(5e-3),
+        "n_envs": 24,
+        "batch_size": 300,
         "seed": 1,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_demo/SAC/10traj_morestable",

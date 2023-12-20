@@ -764,7 +764,8 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             self.render()
 
         reward = self.compute_reward()
-
+        if reward < 0.3:
+            done = True
         # if done and self.record_for_reward_inference:
         #     # save the whole state_buffer for reward inference
         #     import time

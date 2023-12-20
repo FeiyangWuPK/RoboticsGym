@@ -381,8 +381,8 @@ class HIP(OffPolicyAlgorithm):
             self.critic.optimizer,
             self.student_actor.optimizer,
             self.student_critic.optimizer,
-            self.reward_est.optimizer,
-            self.student_reward_est.optimizer,
+            # self.reward_est.optimizer,
+            # self.student_reward_est.optimizer,
         ]  # reward est optimizer should not change pace
         if self.ent_coef_optimizer is not None:
             optimizers += [self.ent_coef_optimizer]
