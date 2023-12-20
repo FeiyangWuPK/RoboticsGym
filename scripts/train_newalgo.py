@@ -34,8 +34,6 @@ from roboticsgym.algorithms.sb3.newAlgo import (
     evaluate_student_policy,
 )
 
-from roboticsgym.envs.oldcassie_v4 import OldCassieMirrorEnv
-
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
@@ -60,17 +58,17 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
 
 def train_cassie_v4():
     config = {
-        "policy_type": "MlpPolicy",
+        "policy_type": "IPMDPolicy",
         "total_timesteps": 5e6,
         "env_id": "CassieMirror-v4",
         "buffer_size": 1000000,
         "train_freq": 3,
         "gradient_steps": 3,
         "progress_bar": True,
-        "verbose": 1,
+        "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 5e-3,
+        "learning_rate": linear_schedule(3e-3),
         "n_envs": 24,
         "batch_size": 300,
         "seed": 42,
@@ -131,8 +129,8 @@ def train_cassie_v4():
     callback_list = CallbackList([eval_callback, wandbcallback, eval_student_callback])
     # Init model
     irl_model = HIP(
-        policy="IPMDPolicy",
-        student_policy="IPMDPolicy",
+        policy=config["policy_type"],
+        student_policy=config["policy_type"],
         env=train_env,
         gamma=config["teacher_gamma"],
         verbose=config["verbose"],
@@ -157,7 +155,7 @@ def train_cassie_v4():
         total_timesteps=config["total_timesteps"],
         callback=callback_list,
         progress_bar=config["progress_bar"],
-        log_interval=5,
+        log_interval=50,
     )
     # Evaluation
     _, _ = evaluate_policy(irl_model, eval_env, n_eval_episodes=10)

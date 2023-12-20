@@ -54,8 +54,8 @@ class CassieSim:
         # if terrain:
         #     x_res, y_res = self.get_hfield_nrow(), self.get_hfield_ncol()
         #     self.hfields = self.generate_perlin(x_res, y_res, difficulty_level)
-            
-            # self.randomize_terrain()
+
+        # self.randomize_terrain()
         params_array = (ctypes.c_int32 * 6)()
         cassie_sim_params(self.c, params_array)
         self.nv = cassie_sim_nv(self.c)
@@ -73,7 +73,7 @@ class CassieSim:
         else:
             multiplier = 0.3
         rand_hdata = multiplier * np.random.random((x_res, y_res))
-        
+
         # Set middle of hfield (where Cassie starts) to be flat
         rand_hdata[x_res // 2 - 5 : x_res // 2 + 5, y_res // 2 - 5 : y_res // 2 + 5] = 0
         ret = rand_hdata.reshape(1, -1)

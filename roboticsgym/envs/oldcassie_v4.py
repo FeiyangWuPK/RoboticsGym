@@ -62,7 +62,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
     def __init__(
         self,
-        xml_path="roboticsgym/envs/xml/cassie.xml",
+        xml_path="roboticsgym/envs/old_cassie/cassie_m/model/0cassie.xml",
         forward_reward_weight=1.25,
         ctrl_cost_weight=0.1,
         healthy_reward=5.0,
