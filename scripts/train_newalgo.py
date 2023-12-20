@@ -61,25 +61,25 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
 def train_cassie_v4():
     config = {
         "policy_type": "MlpPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 2e6,
         "env_id": "CassieMirror-v4",
         "buffer_size": 1000000,
         "train_freq": 3,
         "gradient_steps": 3,
         "progress_bar": True,
-        "verbose": 0,
-        "ent_coef": 0.01,
-        "student_ent_coef": 0.01,
-        "learning_rate": linear_schedule(5e-3),
-        "n_envs": 12,
-        "batch_size": 300,
+        "verbose": 1,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": 3e-4,
+        "n_envs": 24,
+        "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable",
         "student_begin": int(0),
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
-        "reward_reg_param": 0.05,
+        "reward_reg_param": 0.065,
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
@@ -92,7 +92,7 @@ def train_cassie_v4():
         reinit=True,
         notes="student coef follows teacher and use off policy evaluation",
     )
-    # wandb.run.log_code(".")
+    wandb.run.log_code(".")
 
     wandbcallback = WandbCallback(
         # gradient_save_freq=5000,
@@ -108,8 +108,8 @@ def train_cassie_v4():
         eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=20000,
-        n_eval_episodes=5,
+        eval_freq=10000,
+        n_eval_episodes=1,
         deterministic=True,
         render=False,
         verbose=1,
@@ -121,8 +121,8 @@ def train_cassie_v4():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=1000,
-        n_eval_episodes=3,
+        eval_freq=10000,
+        n_eval_episodes=1,
         deterministic=True,
         render=False,
         verbose=1,
@@ -156,7 +156,7 @@ def train_cassie_v4():
         total_timesteps=config["total_timesteps"],
         callback=callback_list,
         progress_bar=config["progress_bar"],
-        log_interval=100,
+        log_interval=5,
     )
     # Evaluation
     _, _ = evaluate_policy(irl_model, eval_env, n_eval_episodes=10)

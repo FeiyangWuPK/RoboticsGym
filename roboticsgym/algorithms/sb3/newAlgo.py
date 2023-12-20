@@ -381,6 +381,8 @@ class HIP(OffPolicyAlgorithm):
             self.critic.optimizer,
             self.student_actor.optimizer,
             self.student_critic.optimizer,
+            self.reward_est.optimizer,
+            self.student_reward_est.optimizer,
         ]  # reward est optimizer should not change pace
         if self.ent_coef_optimizer is not None:
             optimizers += [self.ent_coef_optimizer]
@@ -530,11 +532,11 @@ class HIP(OffPolicyAlgorithm):
                     self.reward_est(replay_data.observations, actions_pi.detach()),
                     dim=1,
                 )
-                alpha = 0.05
+
                 reward_est_loss = (
                     estimated_rewards.mean()
                     - expert_estimated_rewards.mean()
-                    + alpha
+                    + self.reward_reg_param
                     * (
                         th.linalg.norm(
                             th.cat([estimated_rewards, expert_estimated_rewards])
@@ -711,19 +713,19 @@ class HIP(OffPolicyAlgorithm):
             )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
-            estimated_rewards_teacher = th.cat(
-                self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
-            )
-            current_reward_est_loss = (
-                estimated_rewards.mean()
-                - estimated_rewards_teacher.mean()
-                + self.reward_reg_param
-                * (
-                    th.linalg.norm(
-                        th.cat([estimated_rewards, estimated_rewards_teacher])
-                    )
-                )
-            )
+            # estimated_rewards_teacher = th.cat(
+            #     self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
+            # )
+            # current_reward_est_loss = (
+            #     estimated_rewards.mean()
+            #     - estimated_rewards_teacher.mean()
+            #     + self.reward_reg_param
+            #     * (
+            #         th.linalg.norm(
+            #             th.cat([estimated_rewards, estimated_rewards_teacher])
+            #         )
+            #     )
+            # )
 
             reward_est_loss = student_reward_est_loss
             # reward_est_loss = current_reward_est_loss
@@ -758,6 +760,7 @@ class HIP(OffPolicyAlgorithm):
         self.logger.record("train/student_actor_loss", np.mean(student_actor_losses))
         self.logger.record("train/student_critic_loss", np.mean(student_critic_losses))
         self.logger.record("train/student_avg_est_loss", student_reward_est_losses[-1])
+        self.logger.record("train/reward_est_loss", np.mean(reward_est_losses))
         if len(ent_coef_losses) > 0:
             self.logger.record("train/ent_coef_loss", np.mean(ent_coef_losses))
 

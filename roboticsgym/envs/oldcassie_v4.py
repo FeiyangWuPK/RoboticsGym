@@ -255,6 +255,20 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self.D = np.array([10.0, 10.0, 8.0, 9.6, 5.0, 10.0, 10.0, 8.0, 9.6, 5.0])
 
         self.record_for_reward_inference = record_for_reward_inference
+
+        self.first_phase_pos_index = np.array(
+            [2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34]
+        )
+        self.first_phase_vel_index = np.array(
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31]
+        )
+
+        self.second_phase_pos_index = np.array(
+            [2, 3, 4, 5, 6, 21, 22, 23, 28, 29, 30, 34, 7, 8, 9, 14, 15, 16, 20]
+        )
+        self.second_phase_vel_index = np.array(
+            [0, 1, 2, 3, 4, 5, 19, 20, 21, 25, 26, 27, 31, 6, 7, 8, 12, 13, 14, 18]
+        )
         # Set observation and action space
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -478,16 +492,9 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
     def _get_obs(self):
         state = self.cassie_state
-        rp, rv = self.get_kin_next_state()
-        ref_pos = np.copy(rp)
-        ref_vel = np.copy(rv)
+        ref_pos, ref_vel = self.get_kin_next_state()
+
         if self.phase < 14:
-            pos_index = np.array(
-                [2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34]
-            )
-            vel_index = np.array(
-                [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31]
-            )
             quaternion = euler2quat(z=self.orientation, y=0, x=0)
             iquaternion = inverse_quaternion(quaternion)
             new_orientation = quaternion_product(
@@ -501,9 +508,9 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             new_translationalAcceleration = rotate_by_quaternion(
                 state.pelvis.translationalAcceleration[:], iquaternion
             )
-            new_rotationalVelocity = rotate_by_quaternion(
-                state.pelvis.rotationalVelocity[:], quaternion
-            )
+            # new_rotationalVelocity = rotate_by_quaternion(
+            #     state.pelvis.rotationalVelocity[:], quaternion
+            # )
             useful_state = np.copy(
                 np.concatenate(
                     [
@@ -521,15 +528,13 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             )
             useful_state = self.apply_randomization(useful_state)
             return np.concatenate(
-                [useful_state, ref_pos[pos_index], ref_vel[vel_index]]
+                [
+                    useful_state,
+                    ref_pos[self.first_phase_pos_index],
+                    ref_vel[self.first_phase_vel_index],
+                ]
             )
         else:
-            pos_index = np.array(
-                [2, 3, 4, 5, 6, 21, 22, 23, 28, 29, 30, 34, 7, 8, 9, 14, 15, 16, 20]
-            )
-            vel_index = np.array(
-                [0, 1, 2, 3, 4, 5, 19, 20, 21, 25, 26, 27, 31, 6, 7, 8, 12, 13, 14, 18]
-            )
             ref_vel[1] = -ref_vel[1]
             euler = quaternion2euler(ref_pos[3:7])
             euler[0] = -euler[0]
@@ -598,9 +603,9 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             new_translationalAcceleration = rotate_by_quaternion(
                 translational_acceleration, iquaternion
             )
-            new_rotationalVelocity = rotate_by_quaternion(
-                rotational_velocity, quaternion
-            )
+            # new_rotationalVelocity = rotate_by_quaternion(
+            #     rotational_velocity, quaternion
+            # )
 
             useful_state = np.copy(
                 np.concatenate(
@@ -620,7 +625,11 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
             useful_state = self.apply_randomization(useful_state)
             return np.concatenate(
-                [useful_state, ref_pos[pos_index], ref_vel[vel_index]]
+                [
+                    useful_state,
+                    ref_pos[self.second_phase_pos_index],
+                    ref_vel[self.second_phase_vel_index],
+                ]
             )
 
     def step_simulation(self, action):
@@ -662,40 +671,37 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         self,
     ):
         ref_pos, ref_vel = self.get_kin_state()
-        ref_pos = np.array(ref_pos)
-        ref_vel = np.array(ref_vel)
-        weight = [0.15, 0.15, 0.1, 0.05, 0.05, 0.15, 0.15, 0.1, 0.05, 0.05]
+        cur_qpos = np.array(self.sim.qpos())
+        cur_qvel = np.array(self.sim.qvel())
+        weight = np.array([0.15, 0.15, 0.1, 0.05, 0.05, 0.15, 0.15, 0.1, 0.05, 0.05])
         joint_penalty = 0
-        joint_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
-        vel_index = [6, 7, 8, 12, 18, 19, 20, 21, 25, 31]
+        joint_index = np.array([7, 8, 9, 14, 20, 21, 22, 23, 28, 34])
+        vel_index = np.array([6, 7, 8, 12, 18, 19, 20, 21, 25, 31])
 
-        for i in range(10):
-            error = (
-                weight[i]
-                * (ref_pos[joint_index[i]] - self.sim.qpos()[joint_index[i]]) ** 2
-            )
-            joint_penalty += error * 30
+        errors = weight * (ref_pos[joint_index] - cur_qpos[joint_index]) ** 2
+        joint_penalty = np.sum(errors * 30)
 
         pelvis_pos = np.copy(self.cassie_state.pelvis.position[:])
         com_penalty = (
             (pelvis_pos[0] - ref_pos[0]) ** 2
             + (pelvis_pos[1] - ref_pos[1]) ** 2
-            + (self.sim.qvel()[2]) ** 2
+            + (cur_qvel[2]) ** 2
         )
 
         # yaw = quat2yaw(self.sim.qpos()[3:7])
 
         # orientation_penalty = (self.sim.qpos()[4])**2+(self.sim.qpos()[5])**2+(yaw - self.orientation)**2
-        orientation_penalty = np.linalg.norm(self.sim.qpos()[3:7] - ref_pos[3:7]) ** 2
+        orientation_penalty = np.power(np.linalg.norm(cur_qpos[3:7] - ref_pos[3:7]), 2)
 
-        overall_pos_penalty = np.linalg.norm(self.sim.qpos() - ref_pos) ** 2
+        overall_pos_penalty = np.power(np.linalg.norm(cur_qpos - ref_pos), 2)
 
-        spring_penalty = (self.sim.qpos()[15]) ** 2 + (self.sim.qpos()[29]) ** 2
+        spring_penalty = (cur_qpos[15]) ** 2 + (cur_qpos[29]) ** 2
         spring_penalty *= 1000
 
         # speed_penalty = (self.sim.qvel()[0] - ref_vel[0])**2 + (self.sim.qvel()[1] - ref_vel[1])**2
-        cur_qvel = np.array(self.sim.qvel())
-        speed_penalty = np.linalg.norm(cur_qvel[vel_index] - ref_vel[vel_index]) ** 2
+        speed_penalty = np.power(
+            np.linalg.norm(cur_qvel[vel_index] - ref_vel[vel_index]), 2
+        )
         total_reward = (
             0.3 * np.exp(-joint_penalty)
             + 0.3 * np.exp(-com_penalty)
@@ -706,7 +712,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
         forward_reward = 0.25 * cur_qvel[0]
 
-        control_cost = 0.25 * np.linalg.norm(self.current_action) ** 2
+        control_cost = 0.25 * np.power(np.linalg.norm(self.current_action), 2)
 
         total_reward += forward_reward - control_cost
 
@@ -718,37 +724,29 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
         return total_reward
 
-    def compute_naive_reward(self):
-        com_vel = self.sim.center_of_mass_velocity()
-        x_vel = com_vel[0]
-
-        forward_reward = 0.25 * x_vel
-        ctrl_cost = 0.1 * np.square(self.current_action).sum()
-        alive_reward = 0.5
-
-        return 0.5 * forward_reward - ctrl_cost + alive_reward
-
     def step(self, action):
         self.current_action = action
         for _ in range(self.control_rate):
             self.step_simulation(action)
 
-        self.whole_state_buffer.append(self._get_obs())
-        left_foot_force, right_foot_force = self.sim.get_foot_forces()
-        center_of_mass_pos = self.sim.center_of_mass_position()
         center_of_mass_vel = self.sim.center_of_mass_velocity()  # list of 3
-        center_of_mass_angular_momentum = self.sim.angular_momentum()  # list of 3
-        # 3 by 3 matrix, list of 9
-        center_of_mass_centroid_inertia = self.sim.centroid_inertia()
-        feet_pos = self.sim.foot_pos()
-        self.useful_recorded_data.append(
-            [left_foot_force, right_foot_force]
-            + center_of_mass_pos
-            + feet_pos
-            + center_of_mass_vel
-            + center_of_mass_angular_momentum
-            + center_of_mass_centroid_inertia
-        )
+        if self.record_for_reward_inference:
+            self.whole_state_buffer.append(self._get_obs())
+            left_foot_force, right_foot_force = self.sim.get_foot_forces()
+            center_of_mass_pos = self.sim.center_of_mass_position()
+
+            center_of_mass_angular_momentum = self.sim.angular_momentum()  # list of 3
+            # 3 by 3 matrix, list of 9
+            center_of_mass_centroid_inertia = self.sim.centroid_inertia()
+            feet_pos = self.sim.foot_pos()
+            self.useful_recorded_data.append(
+                [left_foot_force, right_foot_force]
+                + center_of_mass_pos
+                + feet_pos
+                + center_of_mass_vel
+                + center_of_mass_angular_momentum
+                + center_of_mass_centroid_inertia
+            )
         self.x_vel_sum += center_of_mass_vel[0]
 
         height = self.sim.qpos()[2]
@@ -761,30 +759,30 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         # print("height", height)
 
         done = not (height > 0.4 and height < 100.0) or self.time >= self.time_limit
-        yaw = quat2yaw(self.sim.qpos()[3:7])
+        # yaw = quat2yaw(self.sim.qpos()[3:7])
         if self.visual:
             self.render()
 
         reward = self.compute_reward()
 
-        if done and self.record_for_reward_inference:
-            # save the whole state_buffer for reward inference
-            import time
+        # if done and self.record_for_reward_inference:
+        #     # save the whole state_buffer for reward inference
+        #     import time
 
-            t = time.strftime("%Y_%m_%d_%H_%M_%S")
-            path = "logs/reward_inference"
-            if self.log_file_path is not None:
-                path = f"logs/{self.log_file_path}".replace("\\", "")
+        #     t = time.strftime("%Y_%m_%d_%H_%M_%S")
+        #     path = "logs/reward_inference"
+        #     if self.log_file_path is not None:
+        #         path = f"logs/{self.log_file_path}".replace("\\", "")
 
-            os.makedirs(f"{path}/traj_state_buffer", exist_ok=True)
-            with open(f"{path}/traj_state_buffer/buffer", "wb") as fp:
-                pickle.dump(self.whole_state_buffer, fp)
-            self.whole_state_buffer = []
+        #     os.makedirs(f"{path}/traj_state_buffer", exist_ok=True)
+        #     with open(f"{path}/traj_state_buffer/buffer", "wb") as fp:
+        #         pickle.dump(self.whole_state_buffer, fp)
+        #     self.whole_state_buffer = []
 
-            os.makedirs(f"{path}/traj_useful_recorded_data", exist_ok=True)
-            with open(f"{path}/traj_useful_recorded_data/buffer", "wb") as fp2:
-                pickle.dump(self.useful_recorded_data, fp2)
-            self.useful_recorded_data = []
+        #     os.makedirs(f"{path}/traj_useful_recorded_data", exist_ok=True)
+        #     with open(f"{path}/traj_useful_recorded_data/buffer", "wb") as fp2:
+        #         pickle.dump(self.useful_recorded_data, fp2)
+        #     self.useful_recorded_data = []
 
         return self._get_obs(), reward, done, False, {}
 
