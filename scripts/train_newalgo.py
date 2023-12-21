@@ -11,9 +11,11 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 
 import wandb
+
 from wandb.integration.sb3 import WandbCallback
 import warnings
 
+import roboticsgym.envs
 
 try:
     from tqdm import TqdmExperimentalWarning
@@ -78,6 +80,7 @@ def train_cassie_v4():
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
+        "student_domain_randomization_scale": 0.05,
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
@@ -88,7 +91,7 @@ def train_cassie_v4():
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="student coef follows teacher and use off policy evaluation",
+        notes="student obs + 5 percent gaussian noise",
         # mode="offline",
     )
     wandb.run.log_code(".")
@@ -324,8 +327,3 @@ def run_mujoco_experiments():
 
 if __name__ == "__main__":
     train_cassie_v4()
-    # print('finished! mean_reward: ', mean_reward, student_reward)
-    # visualize_best_student()
-    # array = np.load('logs/2023-07-07-11-16-17/student/evaluations.npz')
-    # print(array['results'].mean(axis=1).max())
-    # run_mujoco_experiments()

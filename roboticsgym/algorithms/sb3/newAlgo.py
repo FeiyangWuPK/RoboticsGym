@@ -557,7 +557,20 @@ class HIP(OffPolicyAlgorithm):
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
 
             # replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)  # type: ignore[union-attr]
-            student_replay_obs = replay_data.observations
+            student_replay_obs = replay_data.observations.clone()
+            student_replay_next_obs = replay_data.next_observations.clone()
+            # Add gaussian noise
+            noise_scale = 0.05
+            student_replay_obs += (
+                th.randn(student_replay_obs.size()).to(device=self.device)
+                * noise_scale
+                * student_replay_obs
+            )
+            student_replay_next_obs += (
+                th.randn(student_replay_next_obs.size()).to(device=self.device)
+                * noise_scale
+                * student_replay_next_obs
+            )
             # Action by the current actor for the sampled state
             student_actions_pi, student_log_prob = self.student_actor.action_log_prob(
                 student_replay_obs
@@ -597,7 +610,7 @@ class HIP(OffPolicyAlgorithm):
                 self.student_ent_coef_optimizer.step()
             self.student_ent_coef = self.ent_coef
             # Student update critic and actor, and update reward estimation
-            student_replay_next_obs = replay_data.next_observations
+
             estimated_rewards = th.cat(
                 self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
             )
