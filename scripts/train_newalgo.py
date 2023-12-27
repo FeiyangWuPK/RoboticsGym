@@ -34,6 +34,8 @@ from roboticsgym.algorithms.sb3.newAlgo import (
     HIP,
     EvalStudentCallback,
     evaluate_student_policy,
+    EvalTeacherCallback,
+    evaluate_teacher_policy,
 )
 
 
@@ -81,6 +83,7 @@ def train_cassie_v4():
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
         "student_domain_randomization_scale": 0.05,
+        "explorer": "student",
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
@@ -91,7 +94,7 @@ def train_cassie_v4():
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="student obs + 5 percent gaussian noise",
+        notes="student as actor, teacher learn from offline data",
         mode="offline",
     )
     wandb.run.log_code(".")
@@ -106,7 +109,7 @@ def train_cassie_v4():
     # Separate evaluation env
     eval_env = make_vec_env(config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv)
     # Use deterministic actions for evaluation
-    eval_callback = EvalCallback(
+    eval_callback = EvalTeacherCallback(
         eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
@@ -120,7 +123,9 @@ def train_cassie_v4():
         config["env_id"],
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
-        env_kwargs={"domain_randomization_scale": 0.1},
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"]
+        },
     )
     eval_student_callback = EvalStudentCallback(
         student_eval_env,
@@ -154,6 +159,8 @@ def train_cassie_v4():
         learning_starts=100,
         student_begin=config["student_begin"],
         reward_reg_param=config["reward_reg_param"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
     )
 
     # Model learning
