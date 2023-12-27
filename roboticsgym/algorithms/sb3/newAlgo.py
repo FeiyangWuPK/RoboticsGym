@@ -412,6 +412,20 @@ class HIP(OffPolicyAlgorithm):
             # Sample replay buffer
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)  # type: ignore[union-attr]
             student_replay_obs = replay_data.observations
+
+            noise_scale = 0.05
+            replay_obs = replay_data.observations.clone()
+            replay_next_obs = replay_data.next_observations.clone()
+            replay_obs += (
+                th.randn(replay_obs.size()).to(device=self.device)
+                * noise_scale
+                * replay_obs
+            )
+            replay_next_obs += (
+                th.randn(replay_next_obs.size()).to(device=self.device)
+                * noise_scale
+                * replay_next_obs
+            )
             # TODO: transform replay_data.obs to student's partial obs,
             # currently pretend they are the same agent
 
@@ -420,7 +434,8 @@ class HIP(OffPolicyAlgorithm):
                 self.actor.reset_noise()
 
             # Action by the current actor for the sampled state
-            actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
+            # actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
+            actions_pi, log_prob = self.actor.action_log_prob(replay_obs)    
             log_prob = log_prob.reshape(-1, 1)
 
             ent_coef_loss = None
@@ -445,8 +460,12 @@ class HIP(OffPolicyAlgorithm):
                 ent_coef_loss.backward()
                 self.ent_coef_optimizer.step()
             if isinstance(self.policy, IPMDPolicy):
+                # estimated_rewards = th.cat(
+                #     self.reward_est(replay_data.observations, replay_data.actions),
+                #     dim=1,
+                # )
                 estimated_rewards = th.cat(
-                    self.reward_est(replay_data.observations, replay_data.actions),
+                    self.reward_est(replay_obs, replay_data.actions),
                     dim=1,
                 )
                 estimated_rewards_copy = estimated_rewards.detach()
@@ -458,12 +477,19 @@ class HIP(OffPolicyAlgorithm):
             # teacher update critic and actor
             with th.no_grad():
                 # Select action according to policy
+                # next_actions, next_log_prob = self.actor.action_log_prob(
+                #     replay_data.next_observations
+                # )
                 next_actions, next_log_prob = self.actor.action_log_prob(
-                    replay_data.next_observations
+                    replay_next_obs
                 )
                 # Compute the next Q values: min over all critics targets
+                # next_q_values = th.cat(
+                #     self.critic_target(replay_data.next_observations, next_actions),
+                #     dim=1,
+                # )
                 next_q_values = th.cat(
-                    self.critic_target(replay_data.next_observations, next_actions),
+                    self.critic_target(replay_next_obs, next_actions),
                     dim=1,
                 )
                 next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
@@ -481,10 +507,12 @@ class HIP(OffPolicyAlgorithm):
 
             # Get current Q-values estimates for each critic network
             # using action from the replay buffer
+            # current_q_values = self.critic(
+            #     replay_data.observations, replay_data.actions
+            # )
             current_q_values = self.critic(
-                replay_data.observations, replay_data.actions
+                replay_obs, replay_data.actions
             )
-
             # Compute critic loss
             critic_loss = 0.5 * sum(
                 F.mse_loss(current_q, target_q_values) for current_q in current_q_values
@@ -504,9 +532,13 @@ class HIP(OffPolicyAlgorithm):
             # Compute actor loss
             # Alternative: actor_loss = th.mean(log_prob - qf1_pi)
             # Min over all critic networks
+            # q_values_pi = th.cat(
+            #     self.critic(replay_data.observations, actions_pi), dim=1
+            # )
             q_values_pi = th.cat(
-                self.critic(replay_data.observations, actions_pi), dim=1
+                self.critic(replay_obs, actions_pi), dim=1
             )
+            
             min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
             actor_loss = ent_coef * log_prob - min_qf_pi
             # actor_loss = actor_loss * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
@@ -528,8 +560,12 @@ class HIP(OffPolicyAlgorithm):
                     ),
                     dim=1,
                 )
+                # estimated_rewards = th.cat(
+                #     self.reward_est(replay_data.observations, actions_pi.detach()),
+                #     dim=1,
+                # )
                 estimated_rewards = th.cat(
-                    self.reward_est(replay_data.observations, actions_pi.detach()),
+                    self.reward_est(replay_obs, actions_pi.detach()),
                     dim=1,
                 )
 
@@ -560,7 +596,7 @@ class HIP(OffPolicyAlgorithm):
             student_replay_obs = replay_data.observations.clone()
             student_replay_next_obs = replay_data.next_observations.clone()
             # Add gaussian noise
-            noise_scale = 0.05
+            noise_scale = 0.00
             student_replay_obs += (
                 th.randn(student_replay_obs.size()).to(device=self.device)
                 * noise_scale
