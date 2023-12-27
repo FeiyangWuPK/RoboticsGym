@@ -95,7 +95,7 @@ def train_cassie_v4():
         save_code=True,  # optional
         reinit=True,
         notes="student as actor, teacher learn from offline data",
-        mode="offline",
+        # mode="offline",
     )
     wandb.run.log_code(".")
 
@@ -123,9 +123,9 @@ def train_cassie_v4():
         config["env_id"],
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
-        env_kwargs={
-            "domain_randomization_scale": config["student_domain_randomization_scale"]
-        },
+        # env_kwargs={
+        #     "domain_randomization_scale": config["student_domain_randomization_scale"]
+        # },
     )
     eval_student_callback = EvalStudentCallback(
         student_eval_env,

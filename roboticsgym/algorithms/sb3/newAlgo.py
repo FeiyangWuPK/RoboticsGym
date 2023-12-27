@@ -618,13 +618,13 @@ class HIP(OffPolicyAlgorithm):
             self.student_ent_coef = self.ent_coef
             # Student update critic and actor, and update reward estimation
 
-            estimated_rewards = th.cat(
+            student_estimated_rewards = th.cat(
                 self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
             )
             if self.num_timesteps < int(self.student_irl_begin_timesteps):
                 estimated_rewards_copy = replay_data.rewards
             else:
-                estimated_rewards_copy = estimated_rewards.detach()
+                estimated_rewards_copy = student_estimated_rewards.clone().detach()
             self.estimated_average_reward = estimated_rewards_copy.mean()
             with th.no_grad():
                 # Select action according to policy
@@ -700,7 +700,7 @@ class HIP(OffPolicyAlgorithm):
             # Get expert reward estimation
             # expert_replay_data = self.expert_replay_buffer.sample(self.batch_size, env=self._vec_normalize_env)
             expert_replay_data = self.expert_replay_data
-            expert_estimated_rewards = th.cat(
+            expert_estimated_rewards_from_student = th.cat(
                 self.student_reward_est(
                     expert_replay_data.observations, expert_replay_data.actions
                 ),
@@ -715,22 +715,50 @@ class HIP(OffPolicyAlgorithm):
             #     student_reward_est_loss = estimated_rewards.mean() - expert_estimated_rewards.mean() + alpha*(th.linalg.norm(th.cat([estimated_rewards, expert_estimated_rewards])))
             # else:
             #     student_reward_est_loss = estimated_rewards.mean() - expert_estimated_rewards.mean() + alpha*(th.linalg.norm(th.cat([estimated_rewards, expert_estimated_rewards])))
-            estimated_rewards = th.cat(
-                self.student_reward_est(student_replay_obs, student_actions_pi_copy),
-                dim=1,
+
+            teacher_estimated_rewards = th.cat(
+                self.reward_est(student_replay_obs, student_actions_pi_copy), dim=1
             )
+
+            student_estimated_rewards_of_teacher_action = th.cat(
+                self.student_reward_est(student_replay_obs, actions_pi), dim=1
+            )
+
             # estimated_rewards = self.scale_tensor(estimated_rewards)
             # expert_estimated_rewards = self.scale_tensor(expert_estimated_rewards)
             student_reward_est_loss = (
-                estimated_rewards.mean()
-                - expert_estimated_rewards.mean()
+                student_estimated_rewards.mean()
+                - expert_estimated_rewards_from_student.mean()
                 + self.reward_reg_param
                 * (
                     th.linalg.norm(
-                        th.cat([estimated_rewards, expert_estimated_rewards])
+                        th.cat(
+                            [
+                                student_estimated_rewards,
+                                expert_estimated_rewards_from_student,
+                            ]
+                        )
                     )
                 )
             )
+
+            # Student's reward estimation should be close to teacher's reward estimation on
+            # teacher's state, action, student's state, action, and expert data state and action
+            if isinstance(self.policy, IPMDPolicy):
+                student_reward_est_loss += (
+                    F.mse_loss(
+                        student_estimated_rewards,
+                        teacher_estimated_rewards.clone().detach(),
+                    )
+                    + F.mse_loss(
+                        student_estimated_rewards_of_teacher_action,
+                        estimated_rewards.clone().detach(),
+                    )
+                    + F.mse_loss(
+                        expert_estimated_rewards_from_student,
+                        expert_estimated_rewards.clone().detach(),
+                    )
+                )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
             # estimated_rewards_teacher = th.cat(
@@ -1312,6 +1340,97 @@ class EvalTeacherCallback(EventCallback):
         wrapped with a Monitor wrapper)
     """
 
+    def __init__(
+        self,
+        eval_env: Union[gym.Env, VecEnv],
+        callback_on_new_best: Optional[BaseCallback] = None,
+        callback_after_eval: Optional[BaseCallback] = None,
+        n_eval_episodes: int = 5,
+        eval_freq: int = 10000,
+        log_path: Optional[str] = None,
+        best_model_save_path: Optional[str] = None,
+        deterministic: bool = True,
+        render: bool = False,
+        verbose: int = 1,
+        warn: bool = True,
+    ):
+        super().__init__(callback_after_eval, verbose=verbose)
+
+        self.callback_on_new_best = callback_on_new_best
+        if self.callback_on_new_best is not None:
+            # Give access to the parent
+            self.callback_on_new_best.parent = self
+
+        self.n_eval_episodes = n_eval_episodes
+        self.eval_freq = eval_freq
+        self.best_mean_reward = -np.inf
+        self.last_mean_reward = -np.inf
+        self.deterministic = deterministic
+        self.render = render
+        self.warn = warn
+
+        # Convert to VecEnv for consistency
+        if not isinstance(eval_env, VecEnv):
+            eval_env = DummyVecEnv([lambda: eval_env])
+
+        self.eval_env = eval_env
+        self.best_model_save_path = best_model_save_path
+        # Logs will be written in ``evaluations.npz``
+        if log_path is not None:
+            log_path = os.path.join(log_path, "evaluations")
+        self.log_path = log_path
+        self.evaluations_results = []
+        self.evaluations_timesteps = []
+        self.evaluations_length = []
+        # For computing success rate
+        self._is_success_buffer = []
+        self.evaluations_successes = []
+
+    def _init_callback(self) -> None:
+        # Does not work in some corner cases, where the wrapper is not the same
+        if not isinstance(self.training_env, type(self.eval_env)):
+            warnings.warn(
+                "Training and eval env are not of the same type"
+                f"{self.training_env} != {self.eval_env}"
+            )
+
+        # Create folders if needed
+        if self.best_model_save_path is not None:
+            os.makedirs(self.best_model_save_path, exist_ok=True)
+        if self.log_path is not None:
+            os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+
+        # Init callback called on new best model
+        if self.callback_on_new_best is not None:
+            self.callback_on_new_best.init_callback(self.model)
+
+    def _log_success_callback(
+        self, locals_: Dict[str, Any], globals_: Dict[str, Any]
+    ) -> None:
+        """
+        Callback passed to the  ``evaluate_policy`` function
+        in order to log the success rate (when applicable),
+        for instance when using HER.
+
+        :param locals_:
+        :param globals_:
+        """
+        info = locals_["info"]
+
+        if locals_["done"]:
+            maybe_is_success = info.get("is_success")
+            if maybe_is_success is not None:
+                self._is_success_buffer.append(maybe_is_success)
+
+    def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables.
+
+        :param locals_: the local variables during rollout collection
+        """
+        if self.callback:
+            self.callback.update_locals(locals_)
+
     def _on_step(self) -> bool:
         continue_training = True
 
@@ -1370,13 +1489,13 @@ class EvalTeacherCallback(EventCallback):
 
             if self.verbose >= 1:
                 print(
-                    f"Student Eval num_timesteps={self.num_timesteps}, "
+                    f"Teacher Eval num_timesteps={self.num_timesteps}, "
                     f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}"
                 )
                 print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
             # Add to current Logger
-            self.logger.record("eval/student_mean_reward", float(mean_reward))
-            self.logger.record("eval/student_mean_ep_length", mean_ep_length)
+            self.logger.record("eval/teacher_mean_reward", float(mean_reward))
+            self.logger.record("eval/teacher_mean_ep_length", mean_ep_length)
 
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
