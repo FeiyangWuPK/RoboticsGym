@@ -175,6 +175,7 @@ class HIP(OffPolicyAlgorithm):
         student_begin: int = int(0),
         reward_reg_param: float = 0.05,
         teacher_state_only_reward: bool = False,
+        explorer: str = "teacher",
     ):
         super().__init__(
             policy,
@@ -233,6 +234,8 @@ class HIP(OffPolicyAlgorithm):
         self.student_irl_begin_timesteps = student_begin
 
         self.reward_reg_param = reward_reg_param
+
+        self.explorer = explorer
 
         if _init_setup_model:
             self._setup_model()
@@ -558,6 +561,8 @@ class HIP(OffPolicyAlgorithm):
 
             # replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)  # type: ignore[union-attr]
             student_replay_obs = replay_data.observations.clone()
+            # print("student replay obs", student_replay_obs.size())
+            # exit()
             student_replay_next_obs = replay_data.next_observations.clone()
             # Add gaussian noise
             noise_scale = 0.05
@@ -789,7 +794,7 @@ class HIP(OffPolicyAlgorithm):
         total_timesteps: int,
         callback: MaybeCallback = None,
         log_interval: int = 4,
-        tb_log_name: str = "SAC",
+        tb_log_name: str = "PMD",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ) -> SelfHIP:
@@ -872,6 +877,33 @@ class HIP(OffPolicyAlgorithm):
             )
 
         return self.expert_replay_buffer
+
+    def predict(
+        self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
+        """
+        Get the policy action from an observation (and optional hidden state).
+        Includes sugar-coating to handle different observations (e.g. normalizing images).
+
+        :param observation: the input observation
+        :param state: The last hidden states (can be None, used in recurrent policies)
+        :param episode_start: The last masks (can be None, used in recurrent policies)
+            this correspond to beginning of episodes,
+            where the hidden states of the RNN must be reset.
+        :param deterministic: Whether or not to return deterministic actions.
+        :return: the model's action and the next hidden state
+            (used in recurrent policies)
+        """
+        if self.explorer == "teacher":
+            return self.policy.predict(observation, state, episode_start, deterministic)
+        else:
+            return self.student_policy.predict(
+                observation, state, episode_start, deterministic
+            )
 
 
 class EvalStudentCallback(EventCallback):

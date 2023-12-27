@@ -92,7 +92,7 @@ def train_cassie_v4():
         save_code=True,  # optional
         reinit=True,
         notes="student obs + 5 percent gaussian noise",
-        # mode="offline",
+        mode="offline",
     )
     wandb.run.log_code(".")
 
@@ -117,7 +117,10 @@ def train_cassie_v4():
         verbose=1,
     )
     student_eval_env = make_vec_env(
-        config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={"domain_randomization_scale": 0.1},
     )
     eval_student_callback = EvalStudentCallback(
         student_eval_env,
