@@ -13,3 +13,9 @@ register(
     entry_point="roboticsgym.envs.oldcassie_v4:OldCassieMirrorEnv",
     max_episode_steps=600,
 )
+
+register(
+    id="CassieMirror-v5",
+    entry_point="roboticsgym.envs.oldcassie_v5:OldCassieMirrorEnv",
+    max_episode_steps=600,
+)

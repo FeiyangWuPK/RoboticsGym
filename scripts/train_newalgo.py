@@ -178,6 +178,125 @@ def train_cassie_v4():
     run.finish()
 
 
+def train_cassie_v5():
+    config = {
+        "policy_type": "IPMDPolicy",
+        "total_timesteps": 5e6,
+        "env_id": "CassieMirror-v5",
+        "buffer_size": 1000000,
+        "train_freq": 3,
+        "gradient_steps": 3,
+        "progress_bar": True,
+        "verbose": 0,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": linear_schedule(3e-3),
+        "n_envs": 24,
+        "batch_size": 300,
+        "seed": 42,
+        "expert_replaybuffersize": 600,
+        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable",
+        "student_begin": int(0),
+        "teacher_gamma": 1.00,
+        "student_gamma": 1.00,
+        "reward_reg_param": 0.05,
+        "student_domain_randomization_scale": 0.00,
+        "explorer": "teacher",
+    }
+    run = wandb.init(
+        project="ICML2024 Guided Learning",
+        config=config,
+        # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
+        name="Testing POMDP, teacher leads",
+        tags=[config["env_id"]],
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        # monitor_gym=True,  # auto-upload the videos of agents playing the game
+        save_code=True,  # optional
+        reinit=True,
+        notes="Teacher as actor, student learn from offline data",
+        # mode="offline",
+    )
+    wandb.run.log_code(".")
+
+    wandbcallback = WandbCallback(
+        # gradient_save_freq=5000,
+    )
+    # Create log dir
+    train_env = make_vec_env(
+        config["env_id"], n_envs=config["n_envs"], vec_env_cls=SubprocVecEnv
+    )
+    # Separate evaluation env
+    eval_env = make_vec_env(config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv)
+    # Use deterministic actions for evaluation
+    eval_callback = EvalTeacherCallback(
+        eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
+        log_path=f"logs/{run.project}/{run.name}/teacher/",
+        eval_freq=10000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    student_eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        # env_kwargs={
+        #     "domain_randomization_scale": config["student_domain_randomization_scale"]
+        # },
+    )
+    eval_student_callback = EvalStudentCallback(
+        student_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/student/",
+        log_path=f"logs/{run.project}/{run.name}/student/",
+        eval_freq=10000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    callback_list = CallbackList([eval_callback, wandbcallback, eval_student_callback])
+    # Init model
+    irl_model = HIP(
+        policy=config["policy_type"],
+        student_policy=config["policy_type"],
+        env=train_env,
+        gamma=config["teacher_gamma"],
+        verbose=config["verbose"],
+        student_gamma=config["student_gamma"],
+        buffer_size=config["buffer_size"],
+        ent_coef=config["ent_coef"],
+        student_ent_coef=config["student_ent_coef"],
+        batch_size=config["batch_size"],
+        learning_rate=config["learning_rate"],
+        gradient_steps=config["gradient_steps"],
+        expert_replaybuffer=config["expert_replaybuffer"],
+        expert_replaybuffersize=config["expert_replaybuffersize"],
+        tensorboard_log=f"logs/tensorboard/{run.name}/",
+        seed=config["seed"],
+        learning_starts=100,
+        student_begin=config["student_begin"],
+        reward_reg_param=config["reward_reg_param"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
+    )
+
+    # Model learning
+    irl_model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=callback_list,
+        progress_bar=config["progress_bar"],
+        log_interval=50,
+    )
+    # Evaluation
+    _, _ = evaluate_policy(irl_model, eval_env, n_eval_episodes=10)
+    _, _ = evaluate_student_policy(irl_model, eval_env, n_eval_episodes=10)
+
+    # Finish wandb run
+    run.finish()
+
+
 def visualize_best_student():
     config = {
         "policy_type": "MlpPolicy",

@@ -708,7 +708,7 @@
     "~/.local/share/ov/pkg/isaac_sim-2023.1.0/kit/kernel/py",
     "~/.local/share/ov/pkg/isaac_sim-2023.1.0/kit/plugins/bindings-python"
   ],
-  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.typeCheckingMode": "basic",
   "python.analysis.autoImportCompletions": true
   // "python.languageServer": "Pylance",
   //   "python.defaultInterpreterPath": "${workspaceFolder}/kit/python/bin/python3",

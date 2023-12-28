@@ -276,13 +276,13 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                 "state": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
-                    shape=(self._get_obs()[0].shape[0],),
+                    shape=(self._get_obs()['state'].shape[0],),
                     dtype=np.float64,
                 ),
                 "observation": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
-                    shape=(self._get_obs()[1].shape[0],),
+                    shape=(self._get_obs()['observation'].shape[0],),
                     dtype=np.float64,
                 ),
             }

@@ -13,8 +13,8 @@ from torch.nn import functional as F
 from stable_baselines3.common.buffers import (
     ReplayBuffer,
     DictReplayBuffer,
-    HerReplayBuffer,
 )
+from stable_baselines3.her import HerReplayBuffer
 from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
@@ -496,7 +496,7 @@ class HIP(OffPolicyAlgorithm):
                     ),
                     dim=1,
                 )
-                estimated_rewards_copy = estimated_rewards.detach()
+                estimated_rewards_copy = estimated_rewards.clone().detach()
                 self.estimated_average_reward = estimated_rewards_copy.mean()
                 average_reward_list.append(self.estimated_average_reward.item())
             else:
@@ -614,18 +614,18 @@ class HIP(OffPolicyAlgorithm):
             student_replay_next_obs = replay_data.next_observations[
                 "observation"
             ].clone()
-            # Add gaussian noise
-            noise_scale = self.student_domain_randomization_scale
-            student_replay_obs += (
-                th.randn(student_replay_obs.size()).to(device=self.device)
-                * noise_scale
-                * student_replay_obs
-            )
-            student_replay_next_obs += (
-                th.randn(student_replay_next_obs.size()).to(device=self.device)
-                * noise_scale
-                * student_replay_next_obs
-            )
+            # # Add gaussian noise
+            # noise_scale = self.student_domain_randomization_scale
+            # student_replay_obs += (
+            #     th.randn(student_replay_obs.size()).to(device=self.device)
+            #     * noise_scale
+            #     * student_replay_obs
+            # )
+            # student_replay_next_obs += (
+            #     th.randn(student_replay_next_obs.size()).to(device=self.device)
+            #     * noise_scale
+            #     * student_replay_next_obs
+            # )
             # Action by the current actor for the sampled state
             student_actions_pi, student_log_prob = self.student_actor.action_log_prob(
                 student_replay_obs
@@ -672,7 +672,7 @@ class HIP(OffPolicyAlgorithm):
             if self.num_timesteps < int(self.student_irl_begin_timesteps):
                 estimated_rewards_copy = replay_data.rewards
             else:
-                estimated_rewards_copy = student_estimated_rewards.clone().detach()
+                estimated_rewards_copy = student_estimated_rewards.detach()
             self.estimated_average_reward = estimated_rewards_copy.mean()
             with th.no_grad():
                 # Select action according to policy
@@ -792,21 +792,21 @@ class HIP(OffPolicyAlgorithm):
 
             # Student's reward estimation should be close to teacher's reward estimation on
             # teacher's state, action, student's state, action, and expert data state and action
-            if isinstance(self.policy, IPMDPolicy):
-                student_reward_est_loss += (
-                    F.mse_loss(
-                        student_estimated_rewards,
-                        teacher_estimated_rewards.clone().detach(),
-                    )
-                    + F.mse_loss(
-                        student_estimated_rewards_of_teacher_action,
-                        estimated_rewards.clone().detach(),
-                    )
-                    + F.mse_loss(
-                        expert_estimated_rewards_from_student,
-                        expert_estimated_rewards.clone().detach(),
-                    )
-                )
+            # if isinstance(self.policy, IPMDPolicy):
+            #     student_reward_est_loss += (
+            #         F.mse_loss(
+            #             student_estimated_rewards,
+            #             teacher_estimated_rewards.clone().detach(),
+            #         )
+            #         + F.mse_loss(
+            #             student_estimated_rewards_of_teacher_action,
+            #             estimated_rewards.clone().detach(),
+            #         )
+            #         + F.mse_loss(
+            #             expert_estimated_rewards_from_student,
+            #             expert_estimated_rewards.clone().detach(),
+            #         )
+            #     )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
             # estimated_rewards_teacher = th.cat(
@@ -823,13 +823,9 @@ class HIP(OffPolicyAlgorithm):
             #     )
             # )
 
-            reward_est_loss = student_reward_est_loss
-            # reward_est_loss = current_reward_est_loss
-            # reward_est_loss = student_reward_est_loss + current_reward_est_loss
-
             if self.num_timesteps > self.student_irl_begin_timesteps:
                 self.student_reward_est.optimizer.zero_grad()
-                reward_est_loss.backward()
+                student_reward_est_loss.backward()
                 self.student_reward_est.optimizer.step()
 
             # Update target networks
@@ -922,7 +918,7 @@ class HIP(OffPolicyAlgorithm):
             (used in recurrent policies)
         """
         return self.student_policy.predict(
-            observation["state"], state, episode_start, deterministic
+            observation["observation"], state, episode_start, deterministic
         )
 
     def teacher_predict(
