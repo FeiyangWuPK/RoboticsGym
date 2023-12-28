@@ -10,7 +10,11 @@ import gymnasium as gym
 from gymnasium import spaces
 from torch.nn import functional as F
 
-from stable_baselines3.common.buffers import ReplayBuffer
+from stable_baselines3.common.buffers import (
+    ReplayBuffer,
+    DictReplayBuffer,
+    HerReplayBuffer,
+)
 from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
@@ -257,7 +261,7 @@ class HIP(OffPolicyAlgorithm):
         # from off_policy_algorithm super()._setup_model()
         # partial_obversevation_space is from Environment's partial_observation_space
         # self.partial_observation_space = self.env.get_attr("partial_observation_space")[0]
-        self.partial_observation_space = self.observation_space
+        self.partial_observation_space = self.observation_space["observation"]
         self.student_policy = (
             self.student_policy_class(  # pytype:disable=not-instantiable
                 self.partial_observation_space,
@@ -269,7 +273,44 @@ class HIP(OffPolicyAlgorithm):
         self.student_policy = self.student_policy.to(self.device)
 
     def _setup_model(self) -> None:
-        super()._setup_model()
+        self._setup_lr_schedule()
+        self.set_random_seed(self.seed)
+
+        if self.replay_buffer_class is None:
+            if isinstance(self.observation_space, spaces.Dict):
+                self.replay_buffer_class = DictReplayBuffer
+            else:
+                self.replay_buffer_class = ReplayBuffer
+
+        if self.replay_buffer is None:
+            # Make a local copy as we should not pickle
+            # the environment when using HerReplayBuffer
+            replay_buffer_kwargs = self.replay_buffer_kwargs.copy()
+            if issubclass(self.replay_buffer_class, HerReplayBuffer):
+                assert (
+                    self.env is not None
+                ), "You must pass an environment when using `HerReplayBuffer`"
+                replay_buffer_kwargs["env"] = self.env
+            self.replay_buffer = self.replay_buffer_class(
+                self.buffer_size,
+                self.observation_space,
+                self.action_space,
+                device=self.device,
+                n_envs=self.n_envs,
+                optimize_memory_usage=self.optimize_memory_usage,
+                **replay_buffer_kwargs,
+            )
+
+        self.policy = self.policy_class(
+            self.observation_space["state"],
+            self.action_space,
+            self.lr_schedule,
+            **self.policy_kwargs,
+        )
+        self.policy = self.policy.to(self.device)
+
+        # Convert train freq parameter to TrainFreq object
+        self._convert_train_freq()
 
         self.clip_range = get_schedule_fn(self.clip_range)
         self._init_student_policy(self.student_policy, self.student_policy_kwargs)
@@ -344,7 +385,7 @@ class HIP(OffPolicyAlgorithm):
 
         self.expert_replay_buffer = ReplayBuffer(
             self.expert_replaybuffersize,
-            observation_space=self.env.observation_space,
+            observation_space=self.env.observation_space["state"],
             action_space=self.env.action_space,
             device=self.device,
         )
@@ -416,16 +457,15 @@ class HIP(OffPolicyAlgorithm):
         for gradient_step in range(gradient_steps):
             # Sample replay buffer
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)  # type: ignore[union-attr]
-            student_replay_obs = replay_data.observations
-            # TODO: transform replay_data.obs to student's partial obs,
-            # currently pretend they are the same agent
 
             # We need to sample because `log_std` may have changed between two gradient steps
             if self.use_sde:
                 self.actor.reset_noise()
 
             # Action by the current actor for the sampled state
-            actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
+            actions_pi, log_prob = self.actor.action_log_prob(
+                replay_data.observations["state"]
+            )
             log_prob = log_prob.reshape(-1, 1)
 
             ent_coef_loss = None
@@ -451,7 +491,9 @@ class HIP(OffPolicyAlgorithm):
                 self.ent_coef_optimizer.step()
             if isinstance(self.policy, IPMDPolicy):
                 estimated_rewards = th.cat(
-                    self.reward_est(replay_data.observations, replay_data.actions),
+                    self.reward_est(
+                        replay_data.observations["state"], replay_data.actions
+                    ),
                     dim=1,
                 )
                 estimated_rewards_copy = estimated_rewards.detach()
@@ -464,11 +506,13 @@ class HIP(OffPolicyAlgorithm):
             with th.no_grad():
                 # Select action according to policy
                 next_actions, next_log_prob = self.actor.action_log_prob(
-                    replay_data.next_observations
+                    replay_data.next_observations["state"]
                 )
                 # Compute the next Q values: min over all critics targets
                 next_q_values = th.cat(
-                    self.critic_target(replay_data.next_observations, next_actions),
+                    self.critic_target(
+                        replay_data.next_observations["state"], next_actions
+                    ),
                     dim=1,
                 )
                 next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
@@ -487,7 +531,7 @@ class HIP(OffPolicyAlgorithm):
             # Get current Q-values estimates for each critic network
             # using action from the replay buffer
             current_q_values = self.critic(
-                replay_data.observations, replay_data.actions
+                replay_data.observations["state"], replay_data.actions
             )
 
             # Compute critic loss
@@ -510,7 +554,7 @@ class HIP(OffPolicyAlgorithm):
             # Alternative: actor_loss = th.mean(log_prob - qf1_pi)
             # Min over all critic networks
             q_values_pi = th.cat(
-                self.critic(replay_data.observations, actions_pi), dim=1
+                self.critic(replay_data.observations["state"], actions_pi), dim=1
             )
             min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
             actor_loss = ent_coef * log_prob - min_qf_pi
@@ -534,7 +578,9 @@ class HIP(OffPolicyAlgorithm):
                     dim=1,
                 )
                 estimated_rewards = th.cat(
-                    self.reward_est(replay_data.observations, actions_pi.detach()),
+                    self.reward_est(
+                        replay_data.observations["state"], actions_pi.detach()
+                    ),
                     dim=1,
                 )
 
@@ -562,10 +608,12 @@ class HIP(OffPolicyAlgorithm):
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
 
             # replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)  # type: ignore[union-attr]
-            student_replay_obs = replay_data.observations.clone()
+            student_replay_obs = replay_data.observations["observation"].clone()
             # print("student replay obs", student_replay_obs.size())
             # exit()
-            student_replay_next_obs = replay_data.next_observations.clone()
+            student_replay_next_obs = replay_data.next_observations[
+                "observation"
+            ].clone()
             # Add gaussian noise
             noise_scale = self.student_domain_randomization_scale
             student_replay_obs += (
@@ -874,7 +922,7 @@ class HIP(OffPolicyAlgorithm):
             (used in recurrent policies)
         """
         return self.student_policy.predict(
-            observation, state, episode_start, deterministic
+            observation["state"], state, episode_start, deterministic
         )
 
     def teacher_predict(
@@ -897,7 +945,9 @@ class HIP(OffPolicyAlgorithm):
         :return: the model's action and the next hidden state
             (used in recurrent policies)
         """
-        return self.policy.predict(observation, state, episode_start, deterministic)
+        return self.policy.predict(
+            observation["observation"], state, episode_start, deterministic
+        )
 
     def load_replay_buffer_to(
         self,
@@ -951,10 +1001,12 @@ class HIP(OffPolicyAlgorithm):
             (used in recurrent policies)
         """
         if self.explorer == "teacher":
-            return self.policy.predict(observation, state, episode_start, deterministic)
+            return self.policy.predict(
+                observation["state"], state, episode_start, deterministic
+            )
         else:
             return self.student_policy.predict(
-                observation, state, episode_start, deterministic
+                observation["observation"], state, episode_start, deterministic
             )
 
 

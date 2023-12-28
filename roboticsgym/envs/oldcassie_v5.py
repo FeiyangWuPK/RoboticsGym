@@ -271,18 +271,21 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             [0, 1, 2, 3, 4, 5, 19, 20, 21, 25, 26, 27, 31, 6, 7, 8, 12, 13, 14, 18]
         )
         # Set state, observation and action space
-        self.state_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(self._get_obs()[0].shape[0],),
-            dtype=np.float64,
-        )
-
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(self._get_obs()[1].shape[0],),
-            dtype=np.float64,
+        self.observation_space = spaces.Dict(
+            {
+                "state": spaces.Box(
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=(self._get_obs()[0].shape[0],),
+                    dtype=np.float64,
+                ),
+                "observation": spaces.Box(
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=(self._get_obs()[1].shape[0],),
+                    dtype=np.float64,
+                ),
+            }
         )
         self.action_space = spaces.Box(low=-1, high=1, shape=(10,), dtype=np.float32)
 
