@@ -459,6 +459,7 @@ class HIP(OffPolicyAlgorithm):
             # We need to sample because `log_std` may have changed between two gradient steps
             if self.use_sde:
                 self.actor.reset_noise()
+                self.student_actor.reset_noise()
 
             # Action by the current actor for the sampled state
             actions_pi, log_prob = self.actor.action_log_prob(
@@ -487,6 +488,9 @@ class HIP(OffPolicyAlgorithm):
                 self.ent_coef_optimizer.zero_grad()
                 ent_coef_loss.backward()
                 self.ent_coef_optimizer.step()
+
+            # Compute estimated reward, either from
+            # IRL or from IL (which is defined in env)
             if isinstance(self.policy, IPMDPolicy):
                 estimated_rewards = th.cat(
                     self.reward_est(
@@ -566,6 +570,7 @@ class HIP(OffPolicyAlgorithm):
             # th.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
             self.actor.optimizer.step()
 
+            # Compute reward estimation loss
             if isinstance(self.policy, IPMDPolicy):
                 # Get expert reward estimation
                 expert_estimated_rewards = th.cat(
@@ -581,7 +586,8 @@ class HIP(OffPolicyAlgorithm):
                     ),
                     dim=1,
                 )
-
+                # Compute dual objective plus regularization
+                # to ensure boundedness of he reward estimation
                 reward_est_loss = (
                     estimated_rewards.mean()
                     - expert_estimated_rewards.mean()
@@ -613,9 +619,8 @@ class HIP(OffPolicyAlgorithm):
                 student_replay_obs
             )
             student_log_prob = student_log_prob.reshape(-1, 1)
-            student_actions_pi_copy = student_actions_pi.detach()
 
-            # For student agent
+            # For student agent's entropy coefficient
             student_ent_coef_loss = None
             if (
                 self.student_ent_coef_optimizer is not None
@@ -647,17 +652,25 @@ class HIP(OffPolicyAlgorithm):
                 self.student_ent_coef_optimizer.step()
             self.student_ent_coef = self.ent_coef
             # Student update critic and actor, and update reward estimation
-
+            # Reward comes from IRl only
             student_estimated_rewards = th.cat(
                 self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
             )
             if self.num_timesteps < int(self.student_irl_begin_timesteps):
-                estimated_rewards_copy = replay_data.rewards
+                student_estimated_rewards_copy = replay_data.rewards
             else:
                 estimated_rewards_copy = student_estimated_rewards.detach()
             self.estimated_student_average_reward = estimated_rewards_copy.mean()
             with th.no_grad():
                 # Select action according to policy
+                (
+                    student_next_actions,
+                    student_next_log_prob,
+                ) = self.student_actor.action_log_prob(student_replay_next_obs)
+                # student_next_actions, student_next_log_prob = (
+                #     next_actions,
+                #     next_log_prob,
+                # )
                 (
                     student_next_actions,
                     student_next_log_prob,
@@ -682,7 +695,7 @@ class HIP(OffPolicyAlgorithm):
                 ) * student_ent_coef * student_next_log_prob.reshape(-1, 1)
                 # td error + entropy term
                 student_target_q_values = (
-                    estimated_rewards_copy
+                    student_estimated_rewards_copy
                     + (1 - replay_data.dones)
                     * self.student_gamma
                     * student_next_q_values
@@ -735,7 +748,8 @@ class HIP(OffPolicyAlgorithm):
             expert_replay_data = self.expert_replay_data
             expert_estimated_rewards_from_student = th.cat(
                 self.student_reward_est(
-                    expert_replay_data.observations, expert_replay_data.actions
+                    self.expert_replay_data.observations,
+                    self.expert_replay_data.actions,
                 ),
                 dim=1,
             )
@@ -747,7 +761,7 @@ class HIP(OffPolicyAlgorithm):
                 self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
             )
             teacher_estimated_rewards = th.cat(
-                self.reward_est(student_replay_obs, student_actions_pi_copy), dim=1
+                self.reward_est(student_replay_obs, student_actions_pi.detach()), dim=1
             )
 
             student_estimated_rewards_of_teacher_action = th.cat(
