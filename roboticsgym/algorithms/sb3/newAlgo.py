@@ -659,8 +659,10 @@ class HIP(OffPolicyAlgorithm):
             if self.num_timesteps < int(self.student_irl_begin_timesteps):
                 student_estimated_rewards_copy = replay_data.rewards
             else:
-                estimated_rewards_copy = student_estimated_rewards.detach()
-            self.estimated_student_average_reward = estimated_rewards_copy.mean()
+                student_estimated_rewards_copy = student_estimated_rewards.detach()
+            self.estimated_student_average_reward = (
+                student_estimated_rewards_copy.mean()
+            )
             with th.no_grad():
                 # Select action according to policy
                 (
@@ -745,7 +747,7 @@ class HIP(OffPolicyAlgorithm):
             self.student_actor.optimizer.step()
 
             # Get expert reward estimation
-            expert_replay_data = self.expert_replay_data
+
             expert_estimated_rewards_from_student = th.cat(
                 self.student_reward_est(
                     self.expert_replay_data.observations,
@@ -757,15 +759,27 @@ class HIP(OffPolicyAlgorithm):
             student_average_reward_list.append(
                 self.estimated_average_reward.cpu().numpy()
             )
+
+            # Compute dual objective plus regularization
             student_estimated_rewards = th.cat(
-                self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
+                self.student_reward_est(
+                    student_replay_obs, student_actions_pi.detach()
+                ),
+                dim=1,
             )
+
             teacher_estimated_rewards = th.cat(
                 self.reward_est(student_replay_obs, student_actions_pi.detach()), dim=1
             )
 
+            # r(o_t, teacher action) \approx r(s_t, teacher action)
             student_estimated_rewards_of_teacher_action = th.cat(
                 self.student_reward_est(student_replay_obs, actions_pi.detach()),
+                dim=1,
+            )
+
+            teacher_estimated_rewards_of_teacher_action = th.cat(
+                self.reward_est(replay_data.observations["state"], actions_pi.detach()),
                 dim=1,
             )
 
@@ -795,7 +809,7 @@ class HIP(OffPolicyAlgorithm):
                     )
                     + F.mse_loss(
                         student_estimated_rewards_of_teacher_action,
-                        estimated_rewards_copy,
+                        teacher_estimated_rewards_of_teacher_action,
                     )
                     + F.mse_loss(
                         expert_estimated_rewards_from_student,
