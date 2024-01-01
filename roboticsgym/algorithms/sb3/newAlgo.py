@@ -715,18 +715,18 @@ class HIP(OffPolicyAlgorithm):
                 for student_current_q in student_current_q_values
             )
 
-            # Conservative critic loss
-            student_critic_loss += conservative_q_loss(
-                self.student_critic,
-                self.student_actor,
-                importance_sampling_n=10,
-                state=student_replay_obs,
-                actions=student_actions_pi,
-                next_state=student_replay_next_obs,
-                action_space=self.action_space,
-                cql_temp=1,
-                q_pred=student_current_q_values,
-            )
+            # # Conservative critic loss
+            # student_critic_loss += conservative_q_loss(
+            #     self.student_critic,
+            #     self.student_actor,
+            #     importance_sampling_n=10,
+            #     state=student_replay_obs,
+            #     actions=student_actions_pi,
+            #     next_state=student_replay_next_obs,
+            #     action_space=self.action_space,
+            #     cql_temp=1,
+            #     q_pred=student_current_q_values,
+            # )
 
             assert isinstance(student_critic_loss, th.Tensor)  # for type checker
             student_critic_losses.append(student_critic_loss.item())  # type: ignore[union-attr]
@@ -777,7 +777,10 @@ class HIP(OffPolicyAlgorithm):
             )
 
             teacher_estimated_rewards = th.cat(
-                self.reward_est(student_replay_obs, student_actions_pi.detach()), dim=1
+                self.reward_est(
+                    replay_data.observations["state"], student_actions_pi.detach()
+                ),
+                dim=1,
             )
 
             # r(o_t, teacher action) \approx r(s_t, teacher action)
@@ -817,11 +820,11 @@ class HIP(OffPolicyAlgorithm):
                     )
                     + F.mse_loss(
                         student_estimated_rewards_of_teacher_action,
-                        teacher_estimated_rewards_of_teacher_action,
+                        teacher_estimated_rewards_of_teacher_action.detach(),
                     )
                     + F.mse_loss(
                         expert_estimated_rewards_from_student,
-                        expert_estimated_rewards.clone().detach(),
+                        expert_estimated_rewards.detach(),
                     )
                 )
             student_reward_est_losses.append(student_reward_est_loss.item())
@@ -945,7 +948,7 @@ class HIP(OffPolicyAlgorithm):
             (used in recurrent policies)
         """
         return self.policy.predict(
-            observation["observation"], state, episode_start, deterministic
+            observation["state"], state, episode_start, deterministic
         )
 
     def load_replay_buffer_to(

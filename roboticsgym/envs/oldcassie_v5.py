@@ -541,7 +541,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             useful_obs = np.copy(
                 np.concatenate(
                     [
-                        [state.pelvis.position[2]],
+                        [state.pelvis.position[2] - state.terrain.height],
                         new_orientation[:],
                         state.motor.position[:],
                         new_translationalVelocity[:],
@@ -648,13 +648,13 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                     [
                         [state.pelvis.position[2] - state.terrain.height],
                         new_orientation[:],
-                        state.motor.position[:],
+                        motor_position,
                         new_translationalVelocity[:],
-                        state.pelvis.rotationalVelocity[:],
-                        state.motor.velocity[:],
+                        rotational_velocity,
+                        motor_velocity,
                         new_translationalAcceleration[:],
-                        state.joint.position[:],
-                        state.joint.velocity[:],
+                        joint_position,
+                        joint_velocity,
                     ]
                 )
             )

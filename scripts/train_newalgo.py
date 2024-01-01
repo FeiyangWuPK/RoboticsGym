@@ -208,13 +208,13 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Add CQL loss, student POMDP",
+        name="Student domain randomization",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="",
+        notes="Adjust reward reg term",
         # mode="offline",
     )
     wandb.run.log_code(".")
