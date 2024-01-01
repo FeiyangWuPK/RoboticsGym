@@ -126,6 +126,13 @@ class HIP(OffPolicyAlgorithm):
     :param device: Device (cpu, cuda, ...) on which the code should be run.
         Setting it to auto, the code will be run on the GPU if possible.
     :param _init_setup_model: Whether or not to build the network at the creation of the instance
+    :param expert_replaybuffer: Path to the expert replay buffer
+    :param expert_replaybuffersize: Size of the expert replay buffer
+    :param student_begin: Begin training student agent after this many timesteps
+    :param reward_reg_param: Reward regularization parameter
+    :param teacher_state_only_reward: Teacher state only reward, note that although action can still be passed as arguments, but it does not participate the reward funciton computation, i.e., r(s,a)=r(s) if teacher_state_only_reward=True.
+    :param student_domain_randomization_scale: Student domain randomization scale
+    :param explorer: Teacher or student
     """
 
     policy_aliases: Dict[str, Type[BasePolicy]] = {
@@ -669,18 +676,7 @@ class HIP(OffPolicyAlgorithm):
                     student_next_actions,
                     student_next_log_prob,
                 ) = self.student_actor.action_log_prob(student_replay_next_obs)
-                # student_next_actions, student_next_log_prob = (
-                #     next_actions,
-                #     next_log_prob,
-                # )
-                (
-                    student_next_actions,
-                    student_next_log_prob,
-                ) = self.student_actor.action_log_prob(student_replay_next_obs)
-                # student_next_actions, student_next_log_prob = (
-                #     next_actions,
-                #     next_log_prob,
-                # )
+
                 # Compute the next Q values: min over all critics targets
                 student_next_q_values = th.cat(
                     self.student_critic_target(
@@ -718,6 +714,20 @@ class HIP(OffPolicyAlgorithm):
                 F.mse_loss(student_current_q, student_target_q_values)
                 for student_current_q in student_current_q_values
             )
+
+            # Conservative critic loss
+            student_critic_loss += conservative_q_loss(
+                self.student_critic,
+                self.student_actor,
+                importance_sampling_n=10,
+                state=student_replay_obs,
+                actions=student_actions_pi,
+                next_state=student_replay_next_obs,
+                action_space=self.action_space,
+                cql_temp=1,
+                q_pred=student_current_q_values,
+            )
+
             assert isinstance(student_critic_loss, th.Tensor)  # for type checker
             student_critic_losses.append(student_critic_loss.item())  # type: ignore[union-attr]
 
@@ -734,9 +744,7 @@ class HIP(OffPolicyAlgorithm):
             )
             student_min_qf_pi, _ = th.min(student_q_values_pi, dim=1, keepdim=True)
             student_actor_loss = student_ent_coef * student_log_prob - student_min_qf_pi
-            student_actor_loss += F.smooth_l1_loss(
-                student_actions_pi, actions_pi.detach()
-            )
+            student_actor_loss += F.mse_loss(student_actions_pi, actions_pi.detach())
             student_actor_loss = student_actor_loss.mean()
 
             student_actor_losses.append(student_actor_loss.item())
@@ -1707,3 +1715,100 @@ def evaluate_teacher_policy(
     if return_episode_rewards:
         return episode_rewards, episode_lengths
     return mean_reward, std_reward
+
+
+def conservative_q_loss(
+    q_function: ContinuousCritic,
+    policy: Actor,
+    importance_sampling_n: int,
+    state: th.Tensor,
+    actions: th.Tensor,
+    next_state: th.Tensor,
+    action_space: spaces.Space,
+    q_pred: th.Tensor,
+    cql_temp: float = 1.0,
+) -> th.Tensor:
+    """
+    Compute the additional conservative Q-learning loss.
+
+    :param q_function: The Q-function.
+    :param target_q: The target Q-function.
+    :return: The conservative Q-learning loss.
+    """
+    random_density = np.log(0.5**10)
+    q_f_minus_logits1 = []
+    q_f_minus_logits2 = []
+    q_pred1, q_pred2 = q_pred
+    # for s, and a ~ U(.|s)
+    for i in range(importance_sampling_n):
+        action_sampled_uniformly = th.cat(
+            [
+                th.from_numpy(np.array([action_space.sample()]))
+                for i in range(state.shape[0])
+            ],
+            dim=0,
+        ).to(actions.device)
+        (
+            action_sampled_from_policy,
+            action_sampled_from_policy_logits,
+        ) = policy.action_log_prob(state)
+
+        (
+            action_prime_sampled_from_policy,
+            action_prime_sampled_from_policy_logits,
+        ) = policy.action_log_prob(next_state)
+
+        # Compute Q-values for actions sampled from random action and policy
+        q_function_uniform1, q_function_uniform2 = q_function(
+            state, action_sampled_uniformly
+        )
+        q_function_policy1, q_function_policy2 = q_function(
+            state, action_sampled_from_policy.detach()
+        )
+        q_function_prime_policy1, q_function_prime_policy2 = q_function(
+            next_state, action_prime_sampled_from_policy.detach()
+        )
+
+        q_function_uniform1 -= random_density
+        q_function_uniform2 -= random_density
+        q_function_policy1 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
+        q_function_policy2 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
+        q_function_prime_policy1 -= action_prime_sampled_from_policy_logits.reshape(
+            -1, 1
+        ).detach()
+        q_function_prime_policy2 -= action_prime_sampled_from_policy_logits.reshape(
+            -1, 1
+        ).detach()
+
+        q_f_minus_logits1.append(
+            th.cat(
+                [
+                    q_function_uniform1,
+                    q_function_prime_policy1,
+                    q_function_policy1,
+                ],
+                dim=1,
+            )
+        )
+        q_f_minus_logits2.append(
+            th.cat(
+                [
+                    q_function_uniform2,
+                    q_function_prime_policy2,
+                    q_function_policy2,
+                ],
+                dim=1,
+            )
+        )
+    cql_loss1 = (
+        th.logsumexp(th.cat(q_f_minus_logits1, dim=1) / cql_temp, dim=1) * cql_temp
+        - q_pred1
+    ).mean()
+    cql_loss2 = (
+        th.logsumexp(th.cat(q_f_minus_logits2, dim=1) / cql_temp, dim=1) * cql_temp
+        - q_pred2
+    ).mean()
+
+    cql_loss = cql_loss1 + cql_loss2
+    # print("final cql loss shape", cql_loss)
+    return cql_loss

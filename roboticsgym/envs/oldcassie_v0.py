@@ -1,3 +1,4 @@
+# this is replica of v5 but only returns expert observation, no action!
 from ast import Dict
 import os
 import random
@@ -271,24 +272,16 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             [0, 1, 2, 3, 4, 5, 19, 20, 21, 25, 26, 27, 31, 6, 7, 8, 12, 13, 14, 18]
         )
         # Set state, observation and action space
-        self.observation_space = spaces.Dict(
-            {
-                "state": spaces.Box(
-                    low=-np.inf,
-                    high=np.inf,
-                    shape=(self._get_obs()["state"].shape[0],),
-                    dtype=np.float64,
-                ),
-                "observation": spaces.Box(
-                    low=-np.inf,
-                    high=np.inf,
-                    shape=(self._get_obs()["observation"].shape[0],),
-                    dtype=np.float64,
-                ),
-            }
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self._get_obs().shape[0],),
+            dtype=np.float64,
         )
         self.action_space = spaces.Box(low=-1, high=1, shape=(10,), dtype=np.float32)
-
+        ref_pos, ref_vel = self.get_kin_state()
+        self.sim.set_qpos(ref_pos)
+        self.sim.set_qvel(ref_vel)
         """
         Position [1], [2] 				-> Pelvis y, z
                  [3], [4], [5], [6] 	-> Pelvis Orientation qw, qx, qy, qz
@@ -497,7 +490,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         if self.domain_randomization_scale == 0:
             return obs
         else:
-            return obs.copy() + np.random.normal(
+            return obs + np.random.normal(
                 scale=self.domain_randomization_scale * np.abs(obs), size=obs.shape
             )
 
@@ -538,26 +531,10 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                 )
             )
 
-            useful_obs = np.copy(
-                np.concatenate(
-                    [
-                        [state.pelvis.position[2]],
-                        new_orientation[:],
-                        state.motor.position[:],
-                        new_translationalVelocity[:],
-                        state.pelvis.rotationalVelocity[:],
-                        state.motor.velocity[:],
-                        new_translationalAcceleration[:],
-                        state.joint.position[:],
-                        state.joint.velocity[:],
-                    ]
-                )
-            )
-
-            randomized_useful_obs = self.apply_randomization(useful_obs)
+            randomized_useful_state = self.apply_randomization(useful_state)
             observation = np.concatenate(
                 [
-                    randomized_useful_obs,
+                    randomized_useful_state,
                     ref_pos[self.first_phase_pos_index],
                     ref_vel[self.first_phase_vel_index],
                 ]
@@ -569,7 +546,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                     ref_vel[self.first_phase_vel_index],
                 ]
             )
-            return {"state": state, "observation": observation}
+            return state
         else:
             ref_vel[1] = -ref_vel[1]
             euler = quaternion2euler(ref_pos[3:7])
@@ -648,22 +625,6 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                     [
                         [state.pelvis.position[2] - state.terrain.height],
                         new_orientation[:],
-                        state.motor.position[:],
-                        new_translationalVelocity[:],
-                        state.pelvis.rotationalVelocity[:],
-                        state.motor.velocity[:],
-                        new_translationalAcceleration[:],
-                        state.joint.position[:],
-                        state.joint.velocity[:],
-                    ]
-                )
-            )
-
-            useful_obs = np.copy(
-                np.concatenate(
-                    [
-                        [state.pelvis.position[2] - state.terrain.height],
-                        new_orientation[:],
                         motor_position,
                         new_translationalVelocity[:],
                         rotational_velocity,
@@ -675,10 +636,10 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                 )
             )
 
-            randomized_useful_obs = self.apply_randomization(useful_obs)
+            randomized_useful_state = self.apply_randomization(useful_state)
             observation = np.concatenate(
                 [
-                    randomized_useful_obs,
+                    randomized_useful_state,
                     ref_pos[self.second_phase_pos_index],
                     ref_vel[self.second_phase_vel_index],
                 ]
@@ -690,7 +651,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                     ref_vel[self.second_phase_vel_index],
                 ]
             )
-            return {"state": state, "observation": observation}
+            return state
 
     def step_simulation(self, action):
         pos_index = [7, 8, 9, 14, 20, 21, 22, 23, 28, 34]
@@ -787,7 +748,10 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
     def step(self, action):
         self.current_action = action
         for _ in range(self.control_rate):
-            self.step_simulation(action)
+            self.step_simulation(np.zeros(10))
+        ref_pos, ref_vel = self.get_kin_next_state()
+        self.sim.set_qpos(ref_pos)
+        self.sim.set_qvel(ref_vel)
 
         center_of_mass_vel = self.sim.center_of_mass_velocity()  # list of 3
         if self.record_for_reward_inference:
@@ -824,8 +788,9 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             self.render()
 
         reward = self.compute_reward()
-        if reward < 0.3:
-            done = True
+        # print(reward)
+        # if reward < 0.3:
+        #     done = True
         # if done and self.record_for_reward_inference:
         #     # save the whole state_buffer for reward inference
         #     import time

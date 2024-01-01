@@ -70,8 +70,10 @@ class RewardEstimation(BaseModel):
         self.share_features_extractor = share_features_extractor
         self.n_critics = n_critics
         self.r_networks = []
+        self.state_only = state_only
+        print(self.state_only)
         for idx in range(n_critics):
-            if state_only:
+            if self.state_only:
                 r_net = create_mlp(features_dim, 1, net_arch, activation_fn)
             else:
                 r_net = create_mlp(
@@ -87,7 +89,12 @@ class RewardEstimation(BaseModel):
         # when the features_extractor is shared with the actor
         with th.set_grad_enabled(not self.share_features_extractor):
             features = self.extract_features(obs, self.features_extractor)
-        rvalue_input = th.cat([features, actions], dim=1)
+
+        # For state-only reward function, we only need to pass the state
+        if self.state_only:
+            rvalue_input = th.cat([features], dim=1)
+        else:
+            rvalue_input = th.cat([features, actions], dim=1)
         return tuple(r_net(rvalue_input) for r_net in self.r_networks)
 
 

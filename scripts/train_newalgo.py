@@ -195,25 +195,26 @@ def train_cassie_v5():
         "batch_size": 300,
         "seed": 42,
         "expert_replaybuffersize": 600,
-        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable",
+        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
         "student_begin": int(0),
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
-        "student_domain_randomization_scale": 0.00,
+        "student_domain_randomization_scale": 0.1,
         "explorer": "teacher",
+        "state_only": False,
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Tuning student behavior",
+        name="Add CQL loss, student POMDP",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="Teacher as actor, student learn from offline data",
+        notes="",
         # mode="offline",
     )
     wandb.run.log_code(".")
@@ -223,13 +224,20 @@ def train_cassie_v5():
     )
     # Create log dir
     train_env = make_vec_env(
-        config["env_id"], n_envs=config["n_envs"], vec_env_cls=SubprocVecEnv
+        config["env_id"],
+        n_envs=config["n_envs"],
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
     )
     # Separate evaluation env
-    eval_env = make_vec_env(config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv)
+    teacher_eval_env = make_vec_env(
+        config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv
+    )
     # Use deterministic actions for evaluation
-    eval_callback = EvalTeacherCallback(
-        eval_env,
+    teacher_eval_callback = EvalTeacherCallback(
+        teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
         eval_freq=10000,
@@ -242,9 +250,9 @@ def train_cassie_v5():
         config["env_id"],
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
-        # env_kwargs={
-        #     "domain_randomization_scale": config["student_domain_randomization_scale"]
-        # },
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
     )
     eval_student_callback = EvalStudentCallback(
         student_eval_env,
@@ -256,7 +264,9 @@ def train_cassie_v5():
         render=False,
         verbose=1,
     )
-    callback_list = CallbackList([eval_callback, wandbcallback, eval_student_callback])
+    callback_list = CallbackList(
+        [teacher_eval_callback, wandbcallback, eval_student_callback]
+    )
     # Init model
     irl_model = HIP(
         policy=config["policy_type"],
@@ -278,8 +288,9 @@ def train_cassie_v5():
         learning_starts=100,
         student_begin=config["student_begin"],
         reward_reg_param=config["reward_reg_param"],
-        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        student_domain_randomization_scale=0.0,  # this is useless
         explorer=config["explorer"],
+        teacher_state_only_reward=config["state_only"],
     )
 
     # Model learning

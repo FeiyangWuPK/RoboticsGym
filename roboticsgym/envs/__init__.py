@@ -7,6 +7,11 @@ from gymnasium.utils.env_checker import check_env
 #     entry_point="roboticsgym.envs.oldcassie:OldCassieMirrorEnv",
 #     max_episode_steps=600,
 # )
+register(
+    id="CassieMirror-v0",
+    entry_point="roboticsgym.envs.oldcassie_v0:OldCassieMirrorEnv",
+    max_episode_steps=600,
+)
 
 register(
     id="CassieMirror-v4",
