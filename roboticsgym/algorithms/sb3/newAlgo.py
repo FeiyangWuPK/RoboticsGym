@@ -249,7 +249,7 @@ class HIP(OffPolicyAlgorithm):
 
         self.explorer = explorer
         self.student_domain_randomization_scale = student_domain_randomization_scale
-
+        self.random_actions = None  # for CQL loss
         if _init_setup_model:
             self._setup_model()
 
@@ -716,17 +716,21 @@ class HIP(OffPolicyAlgorithm):
             )
 
             # # Conservative critic loss
-            # student_critic_loss += conservative_q_loss(
-            #     self.student_critic,
-            #     self.student_actor,
-            #     importance_sampling_n=10,
-            #     state=student_replay_obs,
-            #     actions=student_actions_pi,
-            #     next_state=student_replay_next_obs,
-            #     action_space=self.action_space,
-            #     cql_temp=1,
-            #     q_pred=student_current_q_values,
-            # )
+            random_actions, cql_loss = conservative_q_loss(
+                self.student_critic,
+                self.student_actor,
+                importance_sampling_n=10,
+                state=student_replay_obs,
+                actions=student_actions_pi,
+                next_state=student_replay_next_obs,
+                action_space=self.action_space,
+                cql_temp=1,
+                q_pred=student_current_q_values,
+                random_actions=self.random_actions,
+            )
+
+            self.random_actions = random_actions
+            student_critic_loss += cql_loss
 
             assert isinstance(student_critic_loss, th.Tensor)  # for type checker
             student_critic_losses.append(student_critic_loss.item())  # type: ignore[union-attr]
@@ -812,21 +816,21 @@ class HIP(OffPolicyAlgorithm):
 
             # Student's reward estimation should be close to teacher's reward estimation on
             # teacher's state, action, student's state, action, and expert data state and action
-            if isinstance(self.policy, IPMDPolicy):
-                student_reward_est_loss += (
-                    F.mse_loss(
-                        student_estimated_rewards,
-                        teacher_estimated_rewards.detach(),
-                    )
-                    + F.mse_loss(
-                        student_estimated_rewards_of_teacher_action,
-                        teacher_estimated_rewards_of_teacher_action.detach(),
-                    )
-                    + F.mse_loss(
-                        expert_estimated_rewards_from_student,
-                        expert_estimated_rewards.detach(),
-                    )
-                )
+            # if isinstance(self.policy, IPMDPolicy):
+            #     student_reward_est_loss += (
+            #         F.mse_loss(
+            #             student_estimated_rewards,
+            #             teacher_estimated_rewards.detach(),
+            #         )
+            #         + F.mse_loss(
+            #             student_estimated_rewards_of_teacher_action,
+            #             teacher_estimated_rewards_of_teacher_action.detach(),
+            #         )
+            #         + F.mse_loss(
+            #             expert_estimated_rewards_from_student,
+            #             expert_estimated_rewards.detach(),
+            #         )
+            #     )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
             if self.num_timesteps > self.student_irl_begin_timesteps:
@@ -1730,6 +1734,7 @@ def conservative_q_loss(
     action_space: spaces.Space,
     q_pred: th.Tensor,
     cql_temp: float = 1.0,
+    random_actions: Optional[th.Tensor] = None,
 ) -> th.Tensor:
     """
     Compute the additional conservative Q-learning loss.
@@ -1738,12 +1743,13 @@ def conservative_q_loss(
     :param target_q: The target Q-function.
     :return: The conservative Q-learning loss.
     """
+    batch_size = state.shape[0]
     random_density = np.log(0.5**10)
     q_f_minus_logits1 = []
     q_f_minus_logits2 = []
     q_pred1, q_pred2 = q_pred
-    # for s, and a ~ U(.|s)
-    for i in range(importance_sampling_n):
+    if random_actions is None:
+        print("random actions")
         action_sampled_uniformly = th.cat(
             [
                 th.from_numpy(np.array([action_space.sample()]))
@@ -1751,67 +1757,141 @@ def conservative_q_loss(
             ],
             dim=0,
         ).to(actions.device)
-        (
-            action_sampled_from_policy,
-            action_sampled_from_policy_logits,
-        ) = policy.action_log_prob(state)
+        random_actions = action_sampled_uniformly.repeat(
+            importance_sampling_n, 1, 1
+        ).reshape(importance_sampling_n * batch_size, -1)
+    state_repeated = state.repeat(importance_sampling_n, 1, 1).reshape(
+        importance_sampling_n * batch_size, -1
+    )
+    next_state_repeated = next_state.repeat(importance_sampling_n, 1, 1).reshape(
+        importance_sampling_n * batch_size, -1
+    )
+    # for s, and a ~ U(.|s)
+    (
+        action_sampled_from_policy,
+        action_sampled_from_policy_logits,
+    ) = policy.action_log_prob(state_repeated)
 
-        (
-            action_prime_sampled_from_policy,
-            action_prime_sampled_from_policy_logits,
-        ) = policy.action_log_prob(next_state)
+    (
+        action_prime_sampled_from_policy,
+        action_prime_sampled_from_policy_logits,
+    ) = policy.action_log_prob(next_state_repeated)
 
-        # Compute Q-values for actions sampled from random action and policy
-        q_function_uniform1, q_function_uniform2 = q_function(
-            state, action_sampled_uniformly
-        )
-        q_function_policy1, q_function_policy2 = q_function(
-            state, action_sampled_from_policy.detach()
-        )
-        q_function_prime_policy1, q_function_prime_policy2 = q_function(
-            next_state, action_prime_sampled_from_policy.detach()
-        )
+    # Compute Q-values for actions sampled from random action and policy
+    q_function_uniform1, q_function_uniform2 = q_function(
+        state_repeated, random_actions
+    )
 
-        q_function_uniform1 -= random_density
-        q_function_uniform2 -= random_density
-        q_function_policy1 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
-        q_function_policy2 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
-        q_function_prime_policy1 -= action_prime_sampled_from_policy_logits.reshape(
-            -1, 1
-        ).detach()
-        q_function_prime_policy2 -= action_prime_sampled_from_policy_logits.reshape(
-            -1, 1
-        ).detach()
+    q_function_policy1, q_function_policy2 = q_function(
+        state_repeated, action_sampled_from_policy.detach()
+    )
 
-        q_f_minus_logits1.append(
-            th.cat(
-                [
-                    q_function_uniform1,
-                    q_function_prime_policy1,
-                    q_function_policy1,
-                ],
-                dim=1,
-            )
-        )
-        q_f_minus_logits2.append(
-            th.cat(
-                [
-                    q_function_uniform2,
-                    q_function_prime_policy2,
-                    q_function_policy2,
-                ],
-                dim=1,
-            )
-        )
+    q_function_prime_policy1, q_function_prime_policy2 = q_function(
+        next_state_repeated, action_prime_sampled_from_policy.detach()
+    )
+
+    q_function_uniform1 -= random_density
+    q_function_uniform2 -= random_density
+    q_function_policy1 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
+    q_function_policy2 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
+    q_function_prime_policy1 -= action_prime_sampled_from_policy_logits.reshape(
+        -1, 1
+    ).detach()
+    q_function_prime_policy2 -= action_prime_sampled_from_policy_logits.reshape(
+        -1, 1
+    ).detach()
+
+    q_f_minus_logits1 = th.cat(
+        [
+            q_function_uniform1,
+            q_function_prime_policy1,
+            q_function_policy1,
+        ],
+        dim=1,
+    )
+    q_f_minus_logits2 = th.cat(
+        [
+            q_function_uniform2,
+            q_function_prime_policy2,
+            q_function_policy2,
+        ],
+        dim=1,
+    )
+
+    assert q_f_minus_logits1.size()[0] == importance_sampling_n * batch_size
+
     cql_loss1 = (
-        th.logsumexp(th.cat(q_f_minus_logits1, dim=1) / cql_temp, dim=1) * cql_temp
+        th.logsumexp(
+            th.cat(
+                [
+                    q_f_minus_logits1[i * batch_size : (i + 1) * batch_size, :]
+                    for i in range(importance_sampling_n)
+                ],
+                dim=1,
+            )
+            / cql_temp,
+            dim=1,
+        )
+        * cql_temp
         - q_pred1
     ).mean()
     cql_loss2 = (
-        th.logsumexp(th.cat(q_f_minus_logits2, dim=1) / cql_temp, dim=1) * cql_temp
+        th.logsumexp(
+            th.cat(
+                [
+                    q_f_minus_logits2[i * batch_size : (i + 1) * batch_size, :]
+                    for i in range(importance_sampling_n)
+                ],
+                dim=1,
+            )
+            / cql_temp,
+            dim=1,
+        )
+        * cql_temp
         - q_pred2
     ).mean()
 
+    # for i in range(importance_sampling_n):
+    #     q_function_uniform1 -= random_density
+    #     q_function_uniform2 -= random_density
+    #     q_function_policy1 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
+    #     q_function_policy2 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
+    #     # q_function_prime_policy1 -= action_prime_sampled_from_policy_logits.reshape(
+    #     #     -1, 1
+    #     # ).detach()
+    #     # q_function_prime_policy2 -= action_prime_sampled_from_policy_logits.reshape(
+    #     #     -1, 1
+    #     # ).detach()
+
+    #     q_f_minus_logits1.append(
+    #         th.cat(
+    #             [
+    #                 q_function_uniform1,
+    #                 # q_function_prime_policy1,
+    #                 q_function_policy1,
+    #             ],
+    #             dim=1,
+    #         )
+    #     )
+    #     q_f_minus_logits2.append(
+    #         th.cat(
+    #             [
+    #                 q_function_uniform2,
+    #                 # q_function_prime_policy2,
+    #                 q_function_policy2,
+    #             ],
+    #             dim=1,
+    #         )
+    #     )
+    # cql_loss1 = (
+    #     th.logsumexp(th.cat(q_f_minus_logits1, dim=1) / cql_temp, dim=1) * cql_temp
+    #     - q_pred1
+    # ).mean()
+    # cql_loss2 = (
+    #     th.logsumexp(th.cat(q_f_minus_logits2, dim=1) / cql_temp, dim=1) * cql_temp
+    #     - q_pred2
+    # ).mean()
+
     cql_loss = cql_loss1 + cql_loss2
-    # print("final cql loss shape", cql_loss)
-    return cql_loss
+
+    return random_actions, cql_loss

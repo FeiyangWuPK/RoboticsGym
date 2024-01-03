@@ -181,7 +181,7 @@ def train_cassie_v4():
 def train_cassie_v5():
     config = {
         "policy_type": "IPMDPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 3e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": 1000000,
         "train_freq": 3,
@@ -200,7 +200,7 @@ def train_cassie_v5():
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
-        "student_domain_randomization_scale": 0.1,
+        "student_domain_randomization_scale": 0.05,
         "explorer": "teacher",
         "state_only": False,
     }
@@ -208,13 +208,13 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Student domain randomization",
+        name="CQL Vectorized, 0.05 random",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="Adjust reward reg term",
+        notes="Vectorize CQL loss compute",
         # mode="offline",
     )
     wandb.run.log_code(".")
@@ -300,9 +300,6 @@ def train_cassie_v5():
         progress_bar=config["progress_bar"],
         log_interval=50,
     )
-    # Evaluation
-    _, _ = evaluate_policy(irl_model, eval_env, n_eval_episodes=10)
-    _, _ = evaluate_student_policy(irl_model, eval_env, n_eval_episodes=10)
 
     # Finish wandb run
     run.finish()
