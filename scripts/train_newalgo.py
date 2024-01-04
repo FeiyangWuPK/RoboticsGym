@@ -181,9 +181,9 @@ def train_cassie_v4():
 def train_cassie_v5():
     config = {
         "policy_type": "IPMDPolicy",
-        "total_timesteps": 3e6,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v5",
-        "buffer_size": 1000000,
+        "buffer_size": 200000,
         "train_freq": 3,
         "gradient_steps": 3,
         "progress_bar": True,
@@ -200,7 +200,7 @@ def train_cassie_v5():
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
-        "student_domain_randomization_scale": 0.05,
+        "student_domain_randomization_scale": 0.00,
         "explorer": "teacher",
         "state_only": False,
     }
@@ -208,13 +208,13 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="CQL Vectorized, 0.05 random",
+        name="Tuning student reward reg",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="Vectorize CQL loss compute",
+        notes="",
         # mode="offline",
     )
     wandb.run.log_code(".")
@@ -227,9 +227,9 @@ def train_cassie_v5():
         config["env_id"],
         n_envs=config["n_envs"],
         vec_env_cls=SubprocVecEnv,
-        env_kwargs={
-            "domain_randomization_scale": config["student_domain_randomization_scale"],
-        },
+        # env_kwargs={
+        #     "domain_randomization_scale": config["student_domain_randomization_scale"],
+        # },
     )
     # Separate evaluation env
     teacher_eval_env = make_vec_env(
@@ -250,9 +250,9 @@ def train_cassie_v5():
         config["env_id"],
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
-        env_kwargs={
-            "domain_randomization_scale": config["student_domain_randomization_scale"],
-        },
+        # env_kwargs={
+        #     "domain_randomization_scale": config["student_domain_randomization_scale"],
+        # },
     )
     eval_student_callback = EvalStudentCallback(
         student_eval_env,

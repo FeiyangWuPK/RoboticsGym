@@ -677,6 +677,14 @@ class HIP(OffPolicyAlgorithm):
                     student_next_log_prob,
                 ) = self.student_actor.action_log_prob(student_replay_next_obs)
 
+                # (
+                #     student_next_actions,
+                #     student_next_log_prob,
+                # ) = (
+                #     next_actions,
+                #     next_log_prob,
+                # )
+
                 # Compute the next Q values: min over all critics targets
                 student_next_q_values = th.cat(
                     self.student_critic_target(
@@ -715,22 +723,22 @@ class HIP(OffPolicyAlgorithm):
                 for student_current_q in student_current_q_values
             )
 
-            # # Conservative critic loss
-            random_actions, cql_loss = conservative_q_loss(
-                self.student_critic,
-                self.student_actor,
-                importance_sampling_n=10,
-                state=student_replay_obs,
-                actions=student_actions_pi,
-                next_state=student_replay_next_obs,
-                action_space=self.action_space,
-                cql_temp=1,
-                q_pred=student_current_q_values,
-                random_actions=self.random_actions,
-            )
+            # Conservative critic loss
+            # random_actions, cql_loss = conservative_q_loss(
+            #     self.student_critic,
+            #     self.student_actor,
+            #     importance_sampling_n=10,
+            #     state=student_replay_obs,
+            #     actions=student_actions_pi,
+            #     next_state=student_replay_next_obs,
+            #     action_space=self.action_space,
+            #     cql_temp=1,
+            #     q_pred=student_current_q_values,
+            #     random_actions=self.random_actions,
+            # )
 
-            self.random_actions = random_actions
-            student_critic_loss += cql_loss
+            # self.random_actions = random_actions
+            # student_critic_loss += cql_loss
 
             assert isinstance(student_critic_loss, th.Tensor)  # for type checker
             student_critic_losses.append(student_critic_loss.item())  # type: ignore[union-attr]
@@ -816,21 +824,21 @@ class HIP(OffPolicyAlgorithm):
 
             # Student's reward estimation should be close to teacher's reward estimation on
             # teacher's state, action, student's state, action, and expert data state and action
-            # if isinstance(self.policy, IPMDPolicy):
-            #     student_reward_est_loss += (
-            #         F.mse_loss(
-            #             student_estimated_rewards,
-            #             teacher_estimated_rewards.detach(),
-            #         )
-            #         + F.mse_loss(
-            #             student_estimated_rewards_of_teacher_action,
-            #             teacher_estimated_rewards_of_teacher_action.detach(),
-            #         )
-            #         + F.mse_loss(
-            #             expert_estimated_rewards_from_student,
-            #             expert_estimated_rewards.detach(),
-            #         )
-            #     )
+            if isinstance(self.policy, IPMDPolicy):
+                student_reward_est_loss += (
+                    F.mse_loss(
+                        student_estimated_rewards,
+                        teacher_estimated_rewards.detach(),
+                    )
+                    # + F.mse_loss(
+                    #     student_estimated_rewards_of_teacher_action,
+                    #     teacher_estimated_rewards_of_teacher_action.detach(),
+                    # )
+                    + F.mse_loss(
+                        expert_estimated_rewards_from_student,
+                        expert_estimated_rewards.detach(),
+                    )
+                )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
             if self.num_timesteps > self.student_irl_begin_timesteps:
@@ -861,7 +869,7 @@ class HIP(OffPolicyAlgorithm):
         self.logger.record("train/critic_loss", np.mean(critic_losses))
         self.logger.record("train/student_actor_loss", np.mean(student_actor_losses))
         self.logger.record("train/student_critic_loss", np.mean(student_critic_losses))
-        self.logger.record("train/student_avg_est_loss", student_reward_est_losses[-1])
+        self.logger.record("train/student_est_loss", np.mean(student_reward_est_losses))
         self.logger.record("train/reward_est_loss", np.mean(reward_est_losses))
         if len(ent_coef_losses) > 0:
             self.logger.record("train/ent_coef_loss", np.mean(ent_coef_losses))
