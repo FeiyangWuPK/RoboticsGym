@@ -493,6 +493,10 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
         return self._get_obs(), dict()
 
+    def set_domain_randomization_scale(self, domain_randomization_scale: float):
+        # print("setting new domain randomization scale")
+        self.domain_randomization_scale = domain_randomization_scale
+
     def apply_randomization(self, obs: np.ndarray) -> np.ndarray:
         if self.domain_randomization_scale == 0:
             return obs

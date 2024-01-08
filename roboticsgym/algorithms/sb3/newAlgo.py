@@ -666,7 +666,8 @@ class HIP(OffPolicyAlgorithm):
             if self.num_timesteps < int(self.student_irl_begin_timesteps):
                 student_estimated_rewards_copy = replay_data.rewards
             else:
-                student_estimated_rewards_copy = student_estimated_rewards.detach()
+                # student_estimated_rewards_copy = student_estimated_rewards.detach()
+                student_estimated_rewards_copy = estimated_rewards_copy
             self.estimated_student_average_reward = (
                 student_estimated_rewards_copy.mean()
             )
@@ -755,8 +756,8 @@ class HIP(OffPolicyAlgorithm):
                 self.student_critic(student_replay_obs, student_actions_pi), dim=1
             )
             student_min_qf_pi, _ = th.min(student_q_values_pi, dim=1, keepdim=True)
-            student_actor_loss = student_ent_coef * student_log_prob - student_min_qf_pi
-            student_actor_loss += F.mse_loss(student_actions_pi, actions_pi.detach())
+            # student_actor_loss = student_ent_coef * student_log_prob - student_min_qf_pi
+            student_actor_loss = F.mse_loss(student_actions_pi, actions_pi.detach())
             student_actor_loss = student_actor_loss.mean()
 
             student_actor_losses.append(student_actor_loss.item())
@@ -824,21 +825,21 @@ class HIP(OffPolicyAlgorithm):
 
             # Student's reward estimation should be close to teacher's reward estimation on
             # teacher's state, action, student's state, action, and expert data state and action
-            if isinstance(self.policy, IPMDPolicy):
-                student_reward_est_loss += (
-                    F.mse_loss(
-                        student_estimated_rewards,
-                        teacher_estimated_rewards.detach(),
-                    )
-                    # + F.mse_loss(
-                    #     student_estimated_rewards_of_teacher_action,
-                    #     teacher_estimated_rewards_of_teacher_action.detach(),
-                    # )
-                    + F.mse_loss(
-                        expert_estimated_rewards_from_student,
-                        expert_estimated_rewards.detach(),
-                    )
-                )
+            # if isinstance(self.policy, IPMDPolicy):
+            #     student_reward_est_loss += (
+            #         F.mse_loss(
+            #             student_estimated_rewards,
+            #             teacher_estimated_rewards.detach(),
+            #         )
+            #         # + F.mse_loss(
+            #         #     student_estimated_rewards_of_teacher_action,
+            #         #     teacher_estimated_rewards_of_teacher_action.detach(),
+            #         # )
+            #         + F.mse_loss(
+            #             expert_estimated_rewards_from_student,
+            #             expert_estimated_rewards.detach(),
+            #         )
+            #     )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
             if self.num_timesteps > self.student_irl_begin_timesteps:
@@ -861,6 +862,20 @@ class HIP(OffPolicyAlgorithm):
                 )
 
         self._n_updates += gradient_steps
+
+        # Adjust domain randomization scale
+        if self.env.env_is_wrapped:
+            self.env.unwrapped.env_method(
+                "set_domain_randomization_scale",
+                self.student_domain_randomization_scale
+                * (1 - self._current_progress_remaining),
+            )
+        else:
+            self.env.env_method(
+                "set_domain_randomization_scale",
+                self.student_domain_randomization_scale
+                * (1 - self._current_progress_remaining),
+            )
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/ent_coef", np.mean(ent_coefs))
@@ -1022,6 +1037,24 @@ class HIP(OffPolicyAlgorithm):
             return self.student_policy.predict(
                 observation["observation"], state, episode_start, deterministic
             )
+
+    def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
+        """
+        Get the name of the torch variables that will be saved with
+        PyTorch ``th.save``, ``th.load`` and ``state_dicts`` instead of the default
+        pickling strategy. This is to handle device placement correctly.
+
+        Names can point to specific variables under classes, e.g.
+        "policy.optimizer" would point to ``optimizer`` object of ``self.policy``
+        if this object.
+
+        :return:
+            List of Torch variables whose state dicts to save (e.g. th.nn.Modules),
+            and list of other Torch variables to store with ``th.save``.
+        """
+        state_dicts = ["policy", "student_policy"]
+
+        return state_dicts, []
 
 
 class EvalStudentCallback(EventCallback):

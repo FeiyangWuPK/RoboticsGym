@@ -193,14 +193,14 @@ def train_cassie_v5():
         "learning_rate": linear_schedule(3e-3),
         "n_envs": 24,
         "batch_size": 300,
-        "seed": 42,
+        "seed": 1,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
         "student_begin": int(0),
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
-        "student_domain_randomization_scale": 0.00,
+        "student_domain_randomization_scale": 0.1,
         "explorer": "teacher",
         "state_only": False,
     }
@@ -208,7 +208,7 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Tuning student reward reg",
+        name="Student Imitating POMDP 0.1 w CL seed 1",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -227,9 +227,9 @@ def train_cassie_v5():
         config["env_id"],
         n_envs=config["n_envs"],
         vec_env_cls=SubprocVecEnv,
-        # env_kwargs={
-        #     "domain_randomization_scale": config["student_domain_randomization_scale"],
-        # },
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
     )
     # Separate evaluation env
     teacher_eval_env = make_vec_env(
@@ -250,9 +250,9 @@ def train_cassie_v5():
         config["env_id"],
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
-        # env_kwargs={
-        #     "domain_randomization_scale": config["student_domain_randomization_scale"],
-        # },
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
     )
     eval_student_callback = EvalStudentCallback(
         student_eval_env,
@@ -288,7 +288,7 @@ def train_cassie_v5():
         learning_starts=100,
         student_begin=config["student_begin"],
         reward_reg_param=config["reward_reg_param"],
-        student_domain_randomization_scale=0.0,  # this is useless
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
         explorer=config["explorer"],
         teacher_state_only_reward=config["state_only"],
     )
@@ -303,6 +303,83 @@ def train_cassie_v5():
 
     # Finish wandb run
     run.finish()
+
+
+def test_student_policy():
+    config = {
+        "policy_type": "IPMDPolicy",
+        "total_timesteps": 5e6,
+        "env_id": "CassieMirror-v5",
+        "buffer_size": 200000,
+        "train_freq": 3,
+        "gradient_steps": 3,
+        "progress_bar": True,
+        "verbose": 0,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": linear_schedule(3e-3),
+        "n_envs": 24,
+        "batch_size": 300,
+        "seed": 42,
+        "expert_replaybuffersize": 600,
+        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
+        "student_begin": int(0),
+        "teacher_gamma": 1.00,
+        "student_gamma": 1.00,
+        "reward_reg_param": 0.05,
+        "student_domain_randomization_scale": 0.1,
+        "explorer": "student",
+        "state_only": False,
+    }
+
+    # Separate evaluation env
+    eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+
+    # Init model
+    irl_model = HIP(
+        policy=config["policy_type"],
+        student_policy=config["policy_type"],
+        env=eval_env,
+        gamma=config["teacher_gamma"],
+        verbose=config["verbose"],
+        student_gamma=config["student_gamma"],
+        buffer_size=config["buffer_size"],
+        ent_coef=config["ent_coef"],
+        student_ent_coef=config["student_ent_coef"],
+        batch_size=config["batch_size"],
+        learning_rate=config["learning_rate"],
+        gradient_steps=config["gradient_steps"],
+        expert_replaybuffer=config["expert_replaybuffer"],
+        expert_replaybuffersize=config["expert_replaybuffersize"],
+        # tensorboard_log=f"logs/tensorboard/{run.name}/",
+        seed=config["seed"],
+        learning_starts=0,
+        student_begin=config["student_begin"],
+        reward_reg_param=config["reward_reg_param"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
+        teacher_state_only_reward=config["state_only"],
+    )
+    irl_model.set_parameters(
+        "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Student imitating POMDP 0.1 w CL/student/best_model.zip"
+    )
+
+    # Evaluation
+    mean_student_reward, mean_student_len = evaluate_student_policy(
+        irl_model, eval_env, n_eval_episodes=1
+    )
+    print(
+        f"Average student reward: {mean_student_reward}, with length {mean_student_len}"
+    )
+
+    return mean_student_reward
 
 
 def visualize_best_student():
