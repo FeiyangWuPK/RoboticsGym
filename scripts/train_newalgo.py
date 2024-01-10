@@ -193,7 +193,7 @@ def train_cassie_v5():
         "learning_rate": linear_schedule(3e-3),
         "n_envs": 24,
         "batch_size": 300,
-        "seed": 1,
+        "seed": 42,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
         "student_begin": int(0),
@@ -208,13 +208,13 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Student Imitating POMDP 0.1 w CL seed 1",
+        name="Student using teacher reward",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="",
+        notes="Imitating POMDP 0.1 w CL",
         # mode="offline",
     )
     wandb.run.log_code(".")

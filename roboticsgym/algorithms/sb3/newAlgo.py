@@ -663,11 +663,8 @@ class HIP(OffPolicyAlgorithm):
             student_estimated_rewards = th.cat(
                 self.student_reward_est(student_replay_obs, replay_data.actions), dim=1
             )
-            if self.num_timesteps < int(self.student_irl_begin_timesteps):
-                student_estimated_rewards_copy = replay_data.rewards
-            else:
-                # student_estimated_rewards_copy = student_estimated_rewards.detach()
-                student_estimated_rewards_copy = estimated_rewards_copy
+            # student_estimated_rewards_copy = student_estimated_rewards.detach()
+            student_estimated_rewards_copy = estimated_rewards_copy
             self.estimated_student_average_reward = (
                 student_estimated_rewards_copy.mean()
             )
@@ -677,14 +674,6 @@ class HIP(OffPolicyAlgorithm):
                     student_next_actions,
                     student_next_log_prob,
                 ) = self.student_actor.action_log_prob(student_replay_next_obs)
-
-                # (
-                #     student_next_actions,
-                #     student_next_log_prob,
-                # ) = (
-                #     next_actions,
-                #     next_log_prob,
-                # )
 
                 # Compute the next Q values: min over all critics targets
                 student_next_q_values = th.cat(
@@ -725,21 +714,21 @@ class HIP(OffPolicyAlgorithm):
             )
 
             # Conservative critic loss
-            # random_actions, cql_loss = conservative_q_loss(
-            #     self.student_critic,
-            #     self.student_actor,
-            #     importance_sampling_n=10,
-            #     state=student_replay_obs,
-            #     actions=student_actions_pi,
-            #     next_state=student_replay_next_obs,
-            #     action_space=self.action_space,
-            #     cql_temp=1,
-            #     q_pred=student_current_q_values,
-            #     random_actions=self.random_actions,
-            # )
+            random_actions, cql_loss = conservative_q_loss(
+                self.student_critic,
+                self.student_actor,
+                importance_sampling_n=10,
+                state=student_replay_obs,
+                actions=student_actions_pi,
+                next_state=student_replay_next_obs,
+                action_space=self.action_space,
+                cql_temp=1,
+                q_pred=student_current_q_values,
+                random_actions=self.random_actions,
+            )
 
-            # self.random_actions = random_actions
-            # student_critic_loss += cql_loss
+            self.random_actions = random_actions
+            student_critic_loss += cql_loss
 
             assert isinstance(student_critic_loss, th.Tensor)  # for type checker
             student_critic_losses.append(student_critic_loss.item())  # type: ignore[union-attr]
@@ -756,9 +745,14 @@ class HIP(OffPolicyAlgorithm):
                 self.student_critic(student_replay_obs, student_actions_pi), dim=1
             )
             student_min_qf_pi, _ = th.min(student_q_values_pi, dim=1, keepdim=True)
-            # student_actor_loss = student_ent_coef * student_log_prob - student_min_qf_pi
-            student_actor_loss = F.mse_loss(student_actions_pi, actions_pi.detach())
-            student_actor_loss = student_actor_loss.mean()
+            if self.num_timesteps < int(self.student_irl_begin_timesteps):
+                student_actor_loss = F.mse_loss(student_actions_pi, actions_pi.detach())
+
+            else:
+                student_actor_loss = (
+                    student_ent_coef * student_log_prob - student_min_qf_pi
+                )
+                student_actor_loss = student_actor_loss.mean()
 
             student_actor_losses.append(student_actor_loss.item())
 
@@ -789,23 +783,23 @@ class HIP(OffPolicyAlgorithm):
                 dim=1,
             )
 
-            teacher_estimated_rewards = th.cat(
-                self.reward_est(
-                    replay_data.observations["state"], student_actions_pi.detach()
-                ),
-                dim=1,
-            )
+            # teacher_estimated_rewards = th.cat(
+            #     self.reward_est(
+            #         replay_data.observations["state"], student_actions_pi.detach()
+            #     ),
+            #     dim=1,
+            # )
 
-            # r(o_t, teacher action) \approx r(s_t, teacher action)
-            student_estimated_rewards_of_teacher_action = th.cat(
-                self.student_reward_est(student_replay_obs, actions_pi.detach()),
-                dim=1,
-            )
+            # # r(o_t, teacher action) \approx r(s_t, teacher action)
+            # student_estimated_rewards_of_teacher_action = th.cat(
+            #     self.student_reward_est(student_replay_obs, actions_pi.detach()),
+            #     dim=1,
+            # )
 
-            teacher_estimated_rewards_of_teacher_action = th.cat(
-                self.reward_est(replay_data.observations["state"], actions_pi.detach()),
-                dim=1,
-            )
+            # teacher_estimated_rewards_of_teacher_action = th.cat(
+            #     self.reward_est(replay_data.observations["state"], actions_pi.detach()),
+            #     dim=1,
+            # )
 
             student_reward_est_loss = (
                 student_estimated_rewards.mean()
@@ -842,10 +836,10 @@ class HIP(OffPolicyAlgorithm):
             #     )
             student_reward_est_losses.append(student_reward_est_loss.item())
 
-            if self.num_timesteps > self.student_irl_begin_timesteps:
-                self.student_reward_est.optimizer.zero_grad()
-                student_reward_est_loss.backward()
-                self.student_reward_est.optimizer.step()
+            # if self.num_timesteps > self.student_irl_begin_timesteps:
+            self.student_reward_est.optimizer.zero_grad()
+            student_reward_est_loss.backward()
+            self.student_reward_est.optimizer.step()
 
             # Update target networks
             if gradient_step % self.target_update_interval == 0:
@@ -1776,7 +1770,7 @@ def conservative_q_loss(
     q_pred: th.Tensor,
     cql_temp: float = 1.0,
     random_actions: Optional[th.Tensor] = None,
-) -> th.Tensor:
+) -> Tuple[th.Tensor, th.Tensor]:
     """
     Compute the additional conservative Q-learning loss.
 
@@ -1891,47 +1885,6 @@ def conservative_q_loss(
         * cql_temp
         - q_pred2
     ).mean()
-
-    # for i in range(importance_sampling_n):
-    #     q_function_uniform1 -= random_density
-    #     q_function_uniform2 -= random_density
-    #     q_function_policy1 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
-    #     q_function_policy2 -= action_sampled_from_policy_logits.reshape(-1, 1).detach()
-    #     # q_function_prime_policy1 -= action_prime_sampled_from_policy_logits.reshape(
-    #     #     -1, 1
-    #     # ).detach()
-    #     # q_function_prime_policy2 -= action_prime_sampled_from_policy_logits.reshape(
-    #     #     -1, 1
-    #     # ).detach()
-
-    #     q_f_minus_logits1.append(
-    #         th.cat(
-    #             [
-    #                 q_function_uniform1,
-    #                 # q_function_prime_policy1,
-    #                 q_function_policy1,
-    #             ],
-    #             dim=1,
-    #         )
-    #     )
-    #     q_f_minus_logits2.append(
-    #         th.cat(
-    #             [
-    #                 q_function_uniform2,
-    #                 # q_function_prime_policy2,
-    #                 q_function_policy2,
-    #             ],
-    #             dim=1,
-    #         )
-    #     )
-    # cql_loss1 = (
-    #     th.logsumexp(th.cat(q_f_minus_logits1, dim=1) / cql_temp, dim=1) * cql_temp
-    #     - q_pred1
-    # ).mean()
-    # cql_loss2 = (
-    #     th.logsumexp(th.cat(q_f_minus_logits2, dim=1) / cql_temp, dim=1) * cql_temp
-    #     - q_pred2
-    # ).mean()
 
     cql_loss = cql_loss1 + cql_loss2
 
