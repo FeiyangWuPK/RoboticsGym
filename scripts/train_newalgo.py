@@ -211,7 +211,7 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Student agent Assymetric",
+        name="Final version bc",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -243,7 +243,7 @@ def train_cassie_v5():
         teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=10000,
+        eval_freq=3000,
         n_eval_episodes=1,
         deterministic=True,
         render=False,
@@ -261,7 +261,7 @@ def train_cassie_v5():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=10000,
+        eval_freq=3000,
         n_eval_episodes=1,
         deterministic=True,
         render=False,
@@ -272,6 +272,135 @@ def train_cassie_v5():
     )
     # Init model
     irl_model = HIP(
+        policy=config["teacher_policy_type"],
+        student_policy=config["student_policy_type"],
+        env=train_env,
+        gamma=config["teacher_gamma"],
+        verbose=config["verbose"],
+        student_gamma=config["student_gamma"],
+        buffer_size=config["buffer_size"],
+        ent_coef=config["ent_coef"],
+        student_ent_coef=config["student_ent_coef"],
+        batch_size=config["batch_size"],
+        learning_rate=config["learning_rate"],
+        gradient_steps=config["gradient_steps"],
+        expert_replaybuffer=config["expert_replaybuffer"],
+        expert_replaybuffersize=config["expert_replaybuffersize"],
+        tensorboard_log=f"logs/tensorboard/{run.name}/",
+        seed=config["seed"],
+        learning_starts=100,
+        student_begin=config["student_begin"],
+        reward_reg_param=config["reward_reg_param"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
+        teacher_state_only_reward=config["state_only"],
+    )
+
+    # Model learning
+    irl_model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=callback_list,
+        progress_bar=config["progress_bar"],
+        log_interval=50,
+    )
+
+    # Finish wandb run
+    run.finish()
+
+
+def train_cassie_v5_second_stage():
+    config = {
+        "teacher_policy_type": "IPMDPolicy",
+        "student_policy_type": "IPMDPolicy",
+        "total_timesteps": 5e6,
+        "env_id": "CassieMirror-v5",
+        "buffer_size": int(1e6),
+        "train_freq": 3,
+        "gradient_steps": 3,
+        "progress_bar": True,
+        "verbose": 0,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": linear_schedule(3e-3),
+        "n_envs": 24,
+        "batch_size": 300,
+        "seed": 42,
+        "expert_replaybuffersize": 600,
+        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
+        "student_begin": int(0),
+        "teacher_gamma": 1.00,
+        "student_gamma": 1.00,
+        "reward_reg_param": 0.05,
+        "student_domain_randomization_scale": 0.1,
+        "explorer": "teacher",
+        "state_only": False,
+        "teacher_policy_path": "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Final version bc/teacher/best_model.zip",
+    }
+    run = wandb.init(
+        project="ICML2024 Guided Learning",
+        config=config,
+        # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
+        name="Student agent",
+        tags=[config["env_id"]],
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        # monitor_gym=True,  # auto-upload the videos of agents playing the game
+        save_code=True,  # optional
+        reinit=True,
+        notes="",
+        # mode="offline",
+    )
+    wandb.run.log_code(".")
+
+    wandbcallback = WandbCallback(
+        # gradient_save_freq=5000,
+    )
+    # Create log dir
+    train_env = make_vec_env(
+        config["env_id"],
+        n_envs=config["n_envs"],
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    # Separate evaluation env
+    teacher_eval_env = make_vec_env(
+        config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv
+    )
+    # Use deterministic actions for evaluation
+    teacher_eval_callback = EvalTeacherCallback(
+        teacher_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
+        log_path=f"logs/{run.project}/{run.name}/teacher/",
+        eval_freq=1000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    student_eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    eval_student_callback = EvalStudentCallback(
+        student_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/student/",
+        log_path=f"logs/{run.project}/{run.name}/student/",
+        eval_freq=1000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    callback_list = CallbackList(
+        [teacher_eval_callback, wandbcallback, eval_student_callback]
+    )
+    # Init model
+    irl_model = HIPSTUDENTONLY(
         policy=config["teacher_policy_type"],
         student_policy=config["student_policy_type"],
         env=train_env,
@@ -786,7 +915,7 @@ def run_mujoco_rl(env_name):
         "teacher_gamma": 0.99,
         "student_gamma": 0.99,
         "reward_reg_param": 0.05,
-        "student_domain_randomization_scale": 0.4,
+        "student_domain_randomization_scale": 0.2,
         "explorer": "teacher",
         "state_only": False,
         "testing_pomdp": False,
@@ -796,7 +925,7 @@ def run_mujoco_rl(env_name):
         project="ICML2024 Guided Learning MuJoCo RL",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name=f"Mujoco RL {env_name} 0.3",
+        name=f"Mujoco RL {env_name} {config['student_domain_randomization_scale']}",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -922,18 +1051,18 @@ def run_mujoco_second_stage(env_name):
         "student_begin": int(0),
         "teacher_gamma": 0.99,
         "student_gamma": 0.99,
-        "student_domain_randomization_scale": 0.4,
+        "student_domain_randomization_scale": 0.2,
         "explorer": "student",
         "state_only": False,
         "testing_pomdp": False,
         "thv_imitation_learning": True,
-        "teacher_policy_path": f"/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning MuJoCo RL/Mujoco RL {env_name} 0.4/teacher/best_model.zip",
+        "teacher_policy_path": f"/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning MuJoCo RL/Mujoco RL {env_name} 0.2/teacher/best_model.zip",
     }
     run = wandb.init(
         project="ICML2024 Guided Learning MuJoCo RL",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name=f"Mujoco RL {env_name} 0.4 Student Learns from BC",
+        name=f"Mujoco RL {env_name} {config['student_domain_randomization_scale']} Student Learns from BC",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game

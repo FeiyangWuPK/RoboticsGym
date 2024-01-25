@@ -16,4 +16,5 @@ if __name__ == "__main__":
     # imitation_learning_POMDP()
     # thv_imitation_learning()
     # asym_irl()
-    run_mujoco_rl("Ant-v4")
+    # run_mujoco_rl("Ant-v4")train_cassie_v5
+    train_cassie_v5()
