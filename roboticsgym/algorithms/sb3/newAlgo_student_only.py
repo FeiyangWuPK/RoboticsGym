@@ -260,7 +260,7 @@ class HIPSTUDENTONLY(OffPolicyAlgorithm):
             self._setup_model()
 
         print(teacher_policy_path)
-        model = HIP.load(teacher_policy_path)
+        model = HIP.load(teacher_policy_path, env=self.env)
         self.teacher_policy = model.policy
         self.policy.load_state_dict(self.teacher_policy.state_dict())
 
@@ -900,7 +900,7 @@ class HIPSTUDENTONLY(OffPolicyAlgorithm):
 
         self._n_updates += gradient_steps
 
-        # Adjust domain randomization scale
+        # # Adjust domain randomization scale
         if self.env.env_is_wrapped:
             self.env.unwrapped.env_method(
                 "set_domain_randomization_scale",

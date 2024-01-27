@@ -184,13 +184,13 @@ def train_cassie_v5():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 10e6,
         "env_id": "CassieMirror-v5",
-        "buffer_size": int(1e6),
+        "buffer_size": int(600),
         "train_freq": 3,
         "gradient_steps": 3,
         "progress_bar": True,
-        "verbose": 0,
+        "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
         "learning_rate": linear_schedule(3e-3),
@@ -211,7 +211,7 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Final version bc",
+        name="Final version tuning - faster reward est lr",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -301,7 +301,7 @@ def train_cassie_v5():
         total_timesteps=config["total_timesteps"],
         callback=callback_list,
         progress_bar=config["progress_bar"],
-        log_interval=50,
+        log_interval=1000,
     )
 
     # Finish wandb run
@@ -312,7 +312,7 @@ def train_cassie_v5_second_stage():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 3e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": int(1e6),
         "train_freq": 3,
@@ -321,8 +321,8 @@ def train_cassie_v5_second_stage():
         "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": linear_schedule(3e-3),
-        "n_envs": 24,
+        "learning_rate": 1e-3,
+        "n_envs": 48,
         "batch_size": 300,
         "seed": 42,
         "expert_replaybuffersize": 600,
@@ -334,13 +334,13 @@ def train_cassie_v5_second_stage():
         "student_domain_randomization_scale": 0.1,
         "explorer": "teacher",
         "state_only": False,
-        "teacher_policy_path": "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Final version bc/teacher/best_model.zip",
+        "teacher_policy_path": "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Final version bc 0.1/teacher/best_model.zip",
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Student agent",
+        name="Final bc second stage 0.1",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -372,7 +372,7 @@ def train_cassie_v5_second_stage():
         teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=1000,
+        eval_freq=3000,
         n_eval_episodes=1,
         deterministic=True,
         render=False,
@@ -390,7 +390,7 @@ def train_cassie_v5_second_stage():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=1000,
+        eval_freq=3000,
         n_eval_episodes=1,
         deterministic=True,
         render=False,
@@ -423,6 +423,7 @@ def train_cassie_v5_second_stage():
         student_domain_randomization_scale=config["student_domain_randomization_scale"],
         explorer=config["explorer"],
         teacher_state_only_reward=config["state_only"],
+        teacher_policy_path=config["teacher_policy_path"],
     )
 
     # Model learning

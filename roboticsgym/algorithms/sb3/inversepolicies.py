@@ -71,7 +71,6 @@ class RewardEstimation(BaseModel):
         self.n_critics = n_critics
         self.r_networks = []
         self.state_only = state_only
-        print(self.state_only)
         for idx in range(n_critics):
             if self.state_only:
                 r_net = create_mlp(features_dim, 1, net_arch, activation_fn)

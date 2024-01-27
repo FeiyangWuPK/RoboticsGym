@@ -895,14 +895,13 @@ class HIP(OffPolicyAlgorithm):
 
         # Adjust domain randomization scale
         if self.env.env_is_wrapped:
-            self.env.unwrapped.env_method(
-                "set_domain_randomization_scale",
+            self.env.unwrapped.domain_randomization_scale = (
                 self.student_domain_randomization_scale
                 * (1 - self._current_progress_remaining),
             )
+
         else:
-            self.env.env_method(
-                "set_domain_randomization_scale",
+            self.env.domain_randomization_scale = (
                 self.student_domain_randomization_scale
                 * (1 - self._current_progress_remaining),
             )
