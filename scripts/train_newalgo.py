@@ -57,7 +57,8 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
         :param progress_remaining:
         :return: current learning rate
         """
-        return progress_remaining * initial_value
+        # return progress_remaining * initial_value
+        return initial_value
 
     return func
 
@@ -184,9 +185,9 @@ def train_cassie_v5():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 10e6,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v5",
-        "buffer_size": int(600),
+        "buffer_size": int(1e6),
         "train_freq": 3,
         "gradient_steps": 3,
         "progress_bar": True,
