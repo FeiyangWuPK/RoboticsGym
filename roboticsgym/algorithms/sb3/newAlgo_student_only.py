@@ -900,7 +900,7 @@ class HIPSTUDENTONLY(OffPolicyAlgorithm):
 
         self._n_updates += gradient_steps
 
-        # # Adjust domain randomization scale
+        # Adjust domain randomization scale
         if self.env.env_is_wrapped:
             self.env.unwrapped.env_method(
                 "set_domain_randomization_scale",

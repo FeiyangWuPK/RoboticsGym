@@ -57,8 +57,7 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
         :param progress_remaining:
         :return: current learning rate
         """
-        # return progress_remaining * initial_value
-        return initial_value
+        return progress_remaining * initial_value
 
     return func
 
@@ -185,7 +184,7 @@ def train_cassie_v5():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 3e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": int(1e6),
         "train_freq": 3,
@@ -212,7 +211,7 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Final version tuning - faster reward est lr",
+        name="Final version tuning - asym+bc - 0.1",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -246,7 +245,7 @@ def train_cassie_v5():
         log_path=f"logs/{run.project}/{run.name}/teacher/",
         eval_freq=3000,
         n_eval_episodes=1,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -264,7 +263,7 @@ def train_cassie_v5():
         log_path=f"logs/{run.project}/{run.name}/student/",
         eval_freq=3000,
         n_eval_episodes=1,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -313,18 +312,18 @@ def train_cassie_v5_second_stage():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 3e6,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": int(1e6),
-        "train_freq": 3,
-        "gradient_steps": 3,
+        "train_freq": 1,
+        "gradient_steps": 1,
         "progress_bar": True,
-        "verbose": 0,
+        "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 1e-3,
+        "learning_rate": linear_schedule(3e-5),
         "n_envs": 48,
-        "batch_size": 300,
+        "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
@@ -333,15 +332,15 @@ def train_cassie_v5_second_stage():
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
         "student_domain_randomization_scale": 0.1,
-        "explorer": "teacher",
+        "explorer": "student",
         "state_only": False,
-        "teacher_policy_path": "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Final version bc 0.1/teacher/best_model.zip",
+        "teacher_policy_path": "logs/ICML2024 Guided Learning/Final bc second stage 0.1 second stage/teacher/best_model.zip",
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Final bc second stage 0.1",
+        name="Final bc second stage 0.1 second stage",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -375,7 +374,7 @@ def train_cassie_v5_second_stage():
         log_path=f"logs/{run.project}/{run.name}/teacher/",
         eval_freq=3000,
         n_eval_episodes=1,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -393,7 +392,7 @@ def train_cassie_v5_second_stage():
         log_path=f"logs/{run.project}/{run.name}/student/",
         eval_freq=3000,
         n_eval_episodes=1,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )

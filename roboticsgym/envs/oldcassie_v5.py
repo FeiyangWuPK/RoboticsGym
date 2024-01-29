@@ -501,8 +501,13 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
         if self.domain_randomization_scale == 0:
             return obs
         else:
-            return obs.copy() + np.random.normal(
-                scale=self.domain_randomization_scale * np.abs(obs), size=obs.shape
+            # return obs.copy() + np.random.normal(
+            #     scale=self.domain_randomization_scale * np.abs(obs), size=obs.shape
+            # )
+            return obs.copy() + +np.random.uniform(
+                low=-self.domain_randomization_scale * np.abs(obs),
+                high=self.domain_randomization_scale * np.abs(obs),
+                size=obs.shape,
             )
 
     def _get_obs(self):
