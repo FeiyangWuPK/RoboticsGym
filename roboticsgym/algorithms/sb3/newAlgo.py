@@ -439,6 +439,8 @@ class HIP(OffPolicyAlgorithm):
             self.critic.optimizer,
             self.student_actor.optimizer,
             self.student_critic.optimizer,
+            self.reward_est.optimizer,
+            self.student_reward_est.optimizer,
         ]  # reward est optimizer should not change pace
         if self.ent_coef_optimizer is not None:
             optimizers += [self.ent_coef_optimizer]
@@ -605,8 +607,9 @@ class HIP(OffPolicyAlgorithm):
                     - expert_estimated_rewards.mean()
                     + self.reward_reg_param
                     * (
-                        th.linalg.norm(
-                            th.cat([estimated_rewards, expert_estimated_rewards])
+                        th.linalg.norm(estimated_rewards.flatten(), ord="float('-inf')")
+                        + th.linalg.norm(
+                            expert_estimated_rewards.flatten(), ord="float('inf')"
                         )
                     )
                 )
@@ -787,7 +790,7 @@ class HIP(OffPolicyAlgorithm):
                 )
                 student_actor_loss = student_actor_loss.mean()
 
-                student_actor_loss += F.mse_loss(
+                student_actor_loss += F.smooth_l1_loss(
                     student_actions_pi, actions_pi.detach()
                 )
 

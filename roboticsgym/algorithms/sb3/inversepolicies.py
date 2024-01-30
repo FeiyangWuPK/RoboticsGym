@@ -420,7 +420,7 @@ class IPMDPolicy(BasePolicy):
         self.critic_target.set_training_mode(False)
 
         self.reward_est.optimizer = self.optimizer_class(
-            reward_parameters, lr=lr_schedule(3e-5), **self.optimizer_kwargs
+            reward_parameters, lr=lr_schedule(1e-5), **self.optimizer_kwargs
         )
 
     def _get_constructor_parameters(self) -> Dict[str, Any]:

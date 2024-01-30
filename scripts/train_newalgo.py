@@ -180,29 +180,29 @@ def train_cassie_v4():
     run.finish()
 
 
-def train_cassie_v5():
+def lt2_irl():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 3e6,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": int(1e6),
-        "train_freq": 3,
-        "gradient_steps": 3,
+        "train_freq": 1,
+        "gradient_steps": 1,
         "progress_bar": True,
         "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
         "learning_rate": linear_schedule(3e-3),
         "n_envs": 24,
-        "batch_size": 300,
+        "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
         "student_begin": int(0),
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
-        "reward_reg_param": 0.05,
+        "reward_reg_param": 0.1,
         "student_domain_randomization_scale": 0.1,
         "explorer": "teacher",
         "state_only": False,
@@ -211,7 +211,7 @@ def train_cassie_v5():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Final version tuning - asym+bc - 0.1",
+        name="Cassie Inverse RL LT2",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -243,7 +243,7 @@ def train_cassie_v5():
         teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=3000,
+        eval_freq=2000,
         n_eval_episodes=1,
         deterministic=False,
         render=False,
@@ -261,8 +261,8 @@ def train_cassie_v5():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=3000,
-        n_eval_episodes=1,
+        eval_freq=2000,
+        n_eval_episodes=5,
         deterministic=False,
         render=False,
         verbose=1,
@@ -312,17 +312,17 @@ def train_cassie_v5_second_stage():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 3e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": int(1e6),
-        "train_freq": 1,
-        "gradient_steps": 1,
+        "train_freq": 3,
+        "gradient_steps": 3,
         "progress_bar": True,
         "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": linear_schedule(3e-5),
-        "n_envs": 48,
+        "learning_rate": linear_schedule(3e-6),
+        "n_envs": 24,
         "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
@@ -334,7 +334,7 @@ def train_cassie_v5_second_stage():
         "student_domain_randomization_scale": 0.1,
         "explorer": "student",
         "state_only": False,
-        "teacher_policy_path": "logs/ICML2024 Guided Learning/Final bc second stage 0.1 second stage/teacher/best_model.zip",
+        "teacher_policy_path": "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Final version tuning - asym+bc - 0.1 - unif/teacher/best_model.zip",
     }
     run = wandb.init(
         project="ICML2024 Guided Learning",
@@ -372,7 +372,7 @@ def train_cassie_v5_second_stage():
         teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=3000,
+        eval_freq=10000,
         n_eval_episodes=1,
         deterministic=False,
         render=False,
@@ -390,8 +390,8 @@ def train_cassie_v5_second_stage():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=3000,
-        n_eval_episodes=1,
+        eval_freq=500,
+        n_eval_episodes=5,
         deterministic=False,
         render=False,
         verbose=1,
@@ -417,7 +417,7 @@ def train_cassie_v5_second_stage():
         expert_replaybuffersize=config["expert_replaybuffersize"],
         tensorboard_log=f"logs/tensorboard/{run.name}/",
         seed=config["seed"],
-        learning_starts=100,
+        learning_starts=10000,
         student_begin=config["student_begin"],
         reward_reg_param=config["reward_reg_param"],
         student_domain_randomization_scale=config["student_domain_randomization_scale"],
@@ -629,27 +629,27 @@ def imitation_learning_POMDP():
     run.finish()
 
 
-def thv_imitation_learning():
+def lt2_imitation_learning():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
         "total_timesteps": 5e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": int(1e6),
-        "train_freq": 3,
-        "gradient_steps": 3,
+        "train_freq": 1,
+        "gradient_steps": 1,
         "progress_bar": True,
-        "verbose": 0,
+        "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": linear_schedule(3e-3),
+        "learning_rate": 3e-3,
         "n_envs": 24,
-        "batch_size": 300,
+        "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
         "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
         "student_begin": int(0),
-        "teacher_gamma": 1.00,
+        "teacher_gamma": 0.99,
         "student_gamma": 1.00,
         "reward_reg_param": 0.05,
         "student_domain_randomization_scale": 0.1,
@@ -661,8 +661,135 @@ def thv_imitation_learning():
     run = wandb.init(
         project="ICML2024 Guided Learning",
         config=config,
+        name=f"Cassie Imitation Learning LT2-{time.strftime('%Y-%m-%d-%H-%M-%S')}",
+        tags=[config["env_id"]],
+        sync_tensorboard=True,
+        save_code=True,
+        reinit=True,
+        notes="smooth l1 loss",
+    )
+    wandb.run.log_code(".")
+
+    wandbcallback = WandbCallback()
+
+    train_env = make_vec_env(
+        config["env_id"],
+        n_envs=config["n_envs"],
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    teacher_eval_env = make_vec_env(
+        config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv
+    )
+
+    teacher_eval_callback = EvalTeacherCallback(
+        teacher_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
+        log_path=f"logs/{run.project}/{run.name}/teacher/",
+        eval_freq=2000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    student_eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    eval_student_callback = EvalStudentCallback(
+        student_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/student/",
+        log_path=f"logs/{run.project}/{run.name}/student/",
+        eval_freq=2000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    callback_list = CallbackList(
+        [teacher_eval_callback, wandbcallback, eval_student_callback]
+    )
+
+    irl_model = HIP(
+        policy=config["teacher_policy_type"],
+        student_policy=config["student_policy_type"],
+        env=train_env,
+        gamma=config["teacher_gamma"],
+        verbose=config["verbose"],
+        student_gamma=config["student_gamma"],
+        buffer_size=config["buffer_size"],
+        ent_coef=config["ent_coef"],
+        student_ent_coef=config["student_ent_coef"],
+        batch_size=config["batch_size"],
+        learning_rate=config["learning_rate"],
+        gradient_steps=config["gradient_steps"],
+        expert_replaybuffer=config["expert_replaybuffer"],
+        expert_replaybuffersize=config["expert_replaybuffersize"],
+        tensorboard_log=f"logs/tensorboard/{run.name}/",
+        seed=config["seed"],
+        learning_starts=100,
+        student_begin=config["student_begin"],
+        reward_reg_param=config["reward_reg_param"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
+        teacher_state_only_reward=config["state_only"],
+        testing_pomdp=config["testing_pomdp"],
+        thv_imitation_learning=config["thv_imitation_learning"],
+    )
+
+    # Model learning
+    irl_model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=callback_list,
+        progress_bar=config["progress_bar"],
+        log_interval=1000,
+    )
+
+    # Finish wandb run
+    run.finish()
+
+
+def imitation_learning_second_stage():
+    config = {
+        "teacher_policy_type": "IPMDPolicy",
+        "student_policy_type": "IPMDPolicy",
+        "total_timesteps": 5e6,
+        "env_id": "CassieMirror-v5",
+        "buffer_size": int(1e6),
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "progress_bar": True,
+        "verbose": 1,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": 5e-6,
+        "n_envs": 24,
+        "batch_size": 256,
+        "seed": 42,
+        "expert_replaybuffersize": 600,
+        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
+        "student_begin": int(0),
+        "teacher_gamma": 0.99,
+        "student_gamma": 1.00,
+        "reward_reg_param": 0.05,
+        "student_domain_randomization_scale": 0.1,
+        "explorer": "student",
+        "state_only": False,
+        "testing_pomdp": False,
+        "thv_imitation_learning": True,
+        "teacher_policy_path": "/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning/Final version - Student Imitation Learning/teacher/best_model.zip",
+    }
+    run = wandb.init(
+        project="ICML2024 Guided Learning",
+        config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Student Imitation Learning",
+        name="Final version - Student Imitation learning second stage",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -694,9 +821,9 @@ def thv_imitation_learning():
         teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=1000,
+        eval_freq=10000,
         n_eval_episodes=1,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -712,9 +839,9 @@ def thv_imitation_learning():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=1000,
-        n_eval_episodes=1,
-        deterministic=True,
+        eval_freq=500,
+        n_eval_episodes=5,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -722,7 +849,7 @@ def thv_imitation_learning():
         [teacher_eval_callback, wandbcallback, eval_student_callback]
     )
     # Init model
-    irl_model = HIP(
+    irl_model = HIPSTUDENTONLY(
         policy=config["teacher_policy_type"],
         student_policy=config["student_policy_type"],
         env=train_env,
@@ -745,8 +872,7 @@ def thv_imitation_learning():
         student_domain_randomization_scale=config["student_domain_randomization_scale"],
         explorer=config["explorer"],
         teacher_state_only_reward=config["state_only"],
-        testing_pomdp=config["testing_pomdp"],
-        thv_imitation_learning=config["thv_imitation_learning"],
+        teacher_policy_path=config["teacher_policy_path"],
     )
 
     # Model learning
