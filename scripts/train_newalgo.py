@@ -202,7 +202,7 @@ def lt2_irl():
         "student_begin": int(0),
         "teacher_gamma": 1.00,
         "student_gamma": 1.00,
-        "reward_reg_param": 0.1,
+        "reward_reg_param": 0.05,
         "student_domain_randomization_scale": 0.1,
         "explorer": "teacher",
         "state_only": False,
@@ -218,7 +218,7 @@ def lt2_irl():
         save_code=True,  # optional
         reinit=True,
         notes="",
-        # mode="offline",
+        mode="offline",
     )
     wandb.run.log_code(".")
 

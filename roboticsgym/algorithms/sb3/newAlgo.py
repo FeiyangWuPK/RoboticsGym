@@ -607,10 +607,8 @@ class HIP(OffPolicyAlgorithm):
                     - expert_estimated_rewards.mean()
                     + self.reward_reg_param
                     * (
-                        th.linalg.norm(estimated_rewards.flatten(), ord="float('-inf')")
-                        + th.linalg.norm(
-                            expert_estimated_rewards.flatten(), ord="float('inf')"
-                        )
+                        th.linalg.norm(estimated_rewards.flatten(), ord=2) ** 2
+                        + th.linalg.norm(expert_estimated_rewards.flatten(), ord=2) ** 2
                     )
                 )
                 reward_est_losses.append(reward_est_loss.item())
