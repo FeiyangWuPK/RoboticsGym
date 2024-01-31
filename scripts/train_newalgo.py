@@ -444,13 +444,13 @@ def test_student_policy():
         "total_timesteps": 5e6,
         "env_id": "CassieMirror-v5",
         "buffer_size": 200000,
-        "train_freq": 3,
-        "gradient_steps": 3,
+        "train_freq": 5,
+        "gradient_steps": 5,
         "progress_bar": True,
         "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": linear_schedule(3e-3),
+        "learning_rate": "1e-3",
         "n_envs": 24,
         "batch_size": 300,
         "seed": 42,
@@ -1023,7 +1023,7 @@ def run_mujoco_rl(env_name):
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 3e6,
+        "total_timesteps": 1e6,
         "env_id": "NoisyMujoco-v4",
         "buffer_size": int(1e6),
         "train_freq": 1,
@@ -1033,7 +1033,7 @@ def run_mujoco_rl(env_name):
         "ent_coef": "auto",
         "student_ent_coef": "auto",
         "learning_rate": 3e-3,
-        "n_envs": 12,
+        "n_envs": 8,
         "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
@@ -1058,7 +1058,7 @@ def run_mujoco_rl(env_name):
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
-        notes="",
+        notes="combine asym and bc loss",
         # mode="offline",
     )
     wandb.run.log_code(".")
@@ -1171,8 +1171,8 @@ def run_mujoco_second_stage(env_name):
         "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 3e-3,
-        "n_envs": 4,
+        "learning_rate": linear_schedule(3e-5),
+        "n_envs": 8,
         "batch_size": 256,
         "seed": 42,
         "student_begin": int(0),
@@ -1183,7 +1183,7 @@ def run_mujoco_second_stage(env_name):
         "state_only": False,
         "testing_pomdp": False,
         "thv_imitation_learning": True,
-        "teacher_policy_path": f"/home/feiyang/Repositories/RoboticsGym/logs/ICML2024 Guided Learning MuJoCo RL/Mujoco RL {env_name} 0.2/teacher/best_model.zip",
+        "teacher_policy_path": f"/home/feiyang/Documents/Repositories/RoboticsGym/logs/ICML2024 Guided Learning MuJoCo RL/Mujoco RL {env_name} 0.2/teacher/best_model.zip",
     }
     run = wandb.init(
         project="ICML2024 Guided Learning MuJoCo RL",
