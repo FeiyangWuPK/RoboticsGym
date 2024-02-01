@@ -597,6 +597,7 @@ def train_hopper_rl():
     # Finish wandb run
     run.finish()
 
+
 def run_hopper_second_stage(env_name="Hopper-v4"):
     config = {
         "teacher_policy_type": "IPMDPolicy",
@@ -718,6 +719,145 @@ def run_hopper_second_stage(env_name="Hopper-v4"):
         testing_pomdp=config["testing_pomdp"],
         thv_imitation_learning=config["thv_imitation_learning"],
         teacher_policy_path=config["teacher_policy_path"],
+    )
+
+    # Model learning
+    irl_model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=callback_list,
+        progress_bar=config["progress_bar"],
+        log_interval=50,
+    )
+
+    # Finish wandb run
+    run.finish()
+
+def halfcheetah_ablation():
+    env_name='HalfCheetah-v4'
+    config = {
+        "teacher_policy_type": "IPMDPolicy",
+        "student_policy_type": "IPMDPolicy",
+        "total_timesteps": 1e6,
+        "env_id": "NoisyMujoco-v4",
+        "buffer_size": int(1e6),
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "progress_bar": True,
+        "verbose": 0,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": 3e-4,
+        "n_envs": 8,
+        "batch_size": 256,
+        "seed": 1,
+        "expert_replaybuffersize": 600,
+        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
+        "student_begin": int(0),
+        "teacher_gamma": 0.99,
+        "student_gamma": 0.99,
+        "reward_reg_param": 0.05,
+        "student_domain_randomization_scale": 0.3,
+        "explorer": "teacher",
+        "state_only": False,
+        "testing_pomdp": False,
+        "thv_imitation_learning": True,
+    }
+    run = wandb.init(
+        project="ICML2024 Guided Learning MuJoCo RL",
+        config=config,
+        # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
+        name=f"Mujoco RL {env_name} {config['student_domain_randomization_scale']} ablation",
+        tags=[config["env_id"]],
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        # monitor_gym=True,  # auto-upload the videos of agents playing the game
+        save_code=True,  # optional
+        reinit=True,
+        notes="",
+        # mode="offline",
+    )
+    wandb.run.log_code(".")
+
+    wandbcallback = WandbCallback(
+        # gradient_save_freq=5000,
+    )
+    # Create log dir
+    train_env = make_vec_env(
+        config["env_id"],
+        n_envs=config["n_envs"],
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "task": env_name,
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    # Separate evaluation env
+    teacher_eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "task": env_name,
+        },
+    )
+    # Use deterministic actions for evaluation
+    teacher_eval_callback = EvalTeacherCallback(
+        teacher_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
+        log_path=f"logs/{run.project}/{run.name}/teacher/",
+        eval_freq=1000,
+        n_eval_episodes=5,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    student_eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "task": env_name,
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    eval_student_callback = EvalStudentCallback(
+        student_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/student/",
+        log_path=f"logs/{run.project}/{run.name}/student/",
+        eval_freq=1000,
+        n_eval_episodes=5,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    callback_list = CallbackList(
+        [teacher_eval_callback, wandbcallback, eval_student_callback]
+    )
+    # Init model
+    irl_model = HIP(
+        policy=config["teacher_policy_type"],
+        student_policy=config["student_policy_type"],
+        env=train_env,
+        gamma=config["teacher_gamma"],
+        verbose=config["verbose"],
+        student_gamma=config["student_gamma"],
+        buffer_size=config["buffer_size"],
+        ent_coef=config["ent_coef"],
+        student_ent_coef=config["student_ent_coef"],
+        batch_size=config["batch_size"],
+        learning_rate=config["learning_rate"],
+        gradient_steps=config["gradient_steps"],
+        expert_replaybuffer=config["expert_replaybuffer"],
+        expert_replaybuffersize=config["expert_replaybuffersize"],
+        tensorboard_log=f"logs/tensorboard/{run.name}/",
+        seed=config["seed"],
+        learning_starts=100,
+        student_begin=config["student_begin"],
+        reward_reg_param=config["reward_reg_param"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
+        teacher_state_only_reward=config["state_only"],
+        testing_pomdp=config["testing_pomdp"],
+        thv_imitation_learning=config["thv_imitation_learning"],
     )
 
     # Model learning

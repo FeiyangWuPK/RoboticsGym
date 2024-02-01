@@ -1,5 +1,5 @@
 # from scripts.train_newalgo import run_mujoco_rl, run_mujoco_second_stage
-from scripts.train_lt2_mujoco import train_hopper_rl, run_hopper_second_stage, run_mujoco_rl
+from scripts.train_lt2_mujoco import train_hopper_rl, run_hopper_second_stage, run_mujoco_rl, halfcheetah_ablation
 
 
 def mujoco_rl_exp():
@@ -27,6 +27,6 @@ def mujoco_second_stage_exp():
 
 if __name__ == "__main__":
     # mujoco_second_stage_exp()
-    run_mujoco_rl('Hopper-v4')
+    halfcheetah_ablation()
     # train_hopper_rl()
     # run_hopper_second_stage()
