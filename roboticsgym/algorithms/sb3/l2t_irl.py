@@ -4,6 +4,8 @@ import warnings
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Callable
 
+from gym.spaces import space
+import gymnasium
 import numpy as np
 import torch as th
 import gymnasium as gym
@@ -60,12 +62,12 @@ except ImportError:
     # if the progress bar is used
     tqdm = None
 
-SelfHIP = TypeVar("SelfHIP", bound="HIP")
+SelfHIP = TypeVar("SelfHIP", bound="L2T")
 
 
-class HIP(OffPolicyAlgorithm):
+class L2T(OffPolicyAlgorithm):
     """
-    Hallucinated Inverse Policy mirror descent algorithm (HIP)
+    Hallucinated Inverse Policy mirror descent algorithm (L2T)
     Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,
     This implementation borrows code from original implementation (https://github.com/haarnoja/sac)
     from OpenAI Spinning Up (https://github.com/openai/spinningup), from the softlearning repo
@@ -272,13 +274,14 @@ class HIP(OffPolicyAlgorithm):
         # from off_policy_algorithm super()._setup_model()
         # partial_obversevation_space is from Environment's partial_observation_space
         # self.partial_observation_space = self.env.get_attr("partial_observation_space")[0]
+        assert self.observation_space is gymnasium.spaces.Dict
         self.partial_observation_space = self.observation_space["observation"]
         self.student_policy = (
             self.student_policy_class(  # pytype:disable=not-instantiable
                 self.partial_observation_space,
                 self.action_space,
                 self.lr_schedule,
-                **self.student_policy_kwargs,  # pytype:disable=not-instantiable
+                **self.student_policy_kwargs,  # pytype:disable=not-instantiable # type: ignore
             )
         )
         self.student_policy = self.student_policy.to(self.device)
@@ -786,7 +789,9 @@ class HIP(OffPolicyAlgorithm):
                     student_ent_coef * student_log_prob - student_min_qf_pi
                 )
                 student_actor_loss = student_actor_loss.mean()
-                student_actor_loss += F.mse_loss(student_actions_pi, actions_pi.detach())
+                student_actor_loss += F.mse_loss(
+                    student_actions_pi, actions_pi.detach()
+                )
 
             student_actor_losses.append(student_actor_loss.item())
 

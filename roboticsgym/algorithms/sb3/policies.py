@@ -4,7 +4,10 @@ import torch as th
 from gymnasium import spaces
 from torch import nn
 
-from stable_baselines3.common.distributions import SquashedDiagGaussianDistribution, StateDependentNoiseDistribution
+from stable_baselines3.common.distributions import (
+    SquashedDiagGaussianDistribution,
+    StateDependentNoiseDistribution,
+)
 from stable_baselines3.common.policies import BasePolicy, ContinuousCritic
 from stable_baselines3.common.preprocessing import get_action_dim
 from stable_baselines3.common.torch_layers import (
@@ -24,7 +27,7 @@ LOG_STD_MIN = -20
 
 class Actor(BasePolicy):
     """
-    Actor network (policy) for HIP.
+    Actor network (policy) for L2T.
 
     :param observation_space: Obervation space
     :param action_space: Action space
@@ -88,15 +91,23 @@ class Actor(BasePolicy):
 
         if self.use_sde:
             self.action_dist = StateDependentNoiseDistribution(
-                action_dim, full_std=full_std, use_expln=use_expln, learn_features=True, squash_output=True
+                action_dim,
+                full_std=full_std,
+                use_expln=use_expln,
+                learn_features=True,
+                squash_output=True,
             )
             self.mu, self.log_std = self.action_dist.proba_distribution_net(
-                latent_dim=last_layer_dim, latent_sde_dim=last_layer_dim, log_std_init=log_std_init
+                latent_dim=last_layer_dim,
+                latent_sde_dim=last_layer_dim,
+                log_std_init=log_std_init,
             )
             # Avoid numerical issues by limiting the mean of the Gaussian
             # to be in [-clip_mean, clip_mean]
             if clip_mean > 0.0:
-                self.mu = nn.Sequential(self.mu, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean))
+                self.mu = nn.Sequential(
+                    self.mu, nn.Hardtanh(min_val=-clip_mean, max_val=clip_mean)
+                )
         else:
             self.action_dist = SquashedDiagGaussianDistribution(action_dim)  # type: ignore[assignment]
             self.mu = nn.Linear(last_layer_dim, action_dim)
@@ -144,7 +155,9 @@ class Actor(BasePolicy):
         assert isinstance(self.action_dist, StateDependentNoiseDistribution), msg
         self.action_dist.sample_weights(self.log_std, batch_size=batch_size)
 
-    def get_action_dist_params(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
+    def get_action_dist_params(
+        self, obs: th.Tensor
+    ) -> Tuple[th.Tensor, th.Tensor, Dict[str, th.Tensor]]:
         """
         Get the parameters for the action distribution.
 
@@ -177,23 +190,27 @@ class Actor(BasePolicy):
             # print("Model's state_dict:")
             # for param_tensor in self.latent_pi.state_dict():
             #     print(param_tensor, "\t", self.latent_pi.state_dict()[param_tensor])
-            
+
             raise ValueError("NaN detected in output of actor network")
         # Note: the action is squashed
-        return self.action_dist.actions_from_params(mean_actions, log_std, deterministic=deterministic, **kwargs)
+        return self.action_dist.actions_from_params(
+            mean_actions, log_std, deterministic=deterministic, **kwargs
+        )
 
     def action_log_prob(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs)
         # return action and associated log prob
         return self.action_dist.log_prob_from_params(mean_actions, log_std, **kwargs)
 
-    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self, observation: th.Tensor, deterministic: bool = False
+    ) -> th.Tensor:
         return self(observation, deterministic)
 
 
-class HIPPolicy(BasePolicy):
+class L2TPolicy(BasePolicy):
     """
-    Policy class (with both actor and critic) for HIP.
+    Policy class (with both actor and critic) for L2T.
 
     :param observation_space: Observation space
     :param action_space: Action space
@@ -299,10 +316,16 @@ class HIPPolicy(BasePolicy):
         )
 
         if self.share_features_extractor:
-            self.critic = self.make_critic(features_extractor=self.actor.features_extractor)
+            self.critic = self.make_critic(
+                features_extractor=self.actor.features_extractor
+            )
             # Do not optimize the shared features extractor with the critic loss
             # otherwise, there are gradient computation issues
-            critic_parameters = [param for name, param in self.critic.named_parameters() if "features_extractor" not in name]
+            critic_parameters = [
+                param
+                for name, param in self.critic.named_parameters()
+                if "features_extractor" not in name
+            ]
         else:
             # Create a separate features extractor for the critic
             # this requires more memory and computation
@@ -351,18 +374,28 @@ class HIPPolicy(BasePolicy):
         """
         self.actor.reset_noise(batch_size=batch_size)
 
-    def make_actor(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> Actor:
-        actor_kwargs = self._update_features_extractor(self.actor_kwargs, features_extractor)
+    def make_actor(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> Actor:
+        actor_kwargs = self._update_features_extractor(
+            self.actor_kwargs, features_extractor
+        )
         return Actor(**actor_kwargs).to(self.device)
 
-    def make_critic(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> ContinuousCritic:
-        critic_kwargs = self._update_features_extractor(self.critic_kwargs, features_extractor)
+    def make_critic(
+        self, features_extractor: Optional[BaseFeaturesExtractor] = None
+    ) -> ContinuousCritic:
+        critic_kwargs = self._update_features_extractor(
+            self.critic_kwargs, features_extractor
+        )
         return ContinuousCritic(**critic_kwargs).to(self.device)
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         return self._predict(obs, deterministic=deterministic)
 
-    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self, observation: th.Tensor, deterministic: bool = False
+    ) -> th.Tensor:
         ret = self.actor(observation, deterministic)
         return ret
 
@@ -379,10 +412,10 @@ class HIPPolicy(BasePolicy):
         self.training = mode
 
 
-MlpPolicy = HIPPolicy
+MlpPolicy = L2TPolicy
 
 
-class CnnPolicy(HIPPolicy):
+class CnnPolicy(L2TPolicy):
     """
     Policy class (with both actor and critic) for SAC.
 
@@ -448,7 +481,7 @@ class CnnPolicy(HIPPolicy):
         )
 
 
-class MultiInputPolicy(HIPPolicy):
+class MultiInputPolicy(L2TPolicy):
     """
     Policy class (with both actor and critic) for SAC.
 

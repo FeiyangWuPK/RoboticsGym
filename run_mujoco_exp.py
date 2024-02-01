@@ -1,5 +1,10 @@
 # from scripts.train_newalgo import run_mujoco_rl, run_mujoco_second_stage
-from scripts.train_lt2_mujoco import train_hopper_rl, run_hopper_second_stage, run_mujoco_rl, halfcheetah_ablation
+from scripts.train_l2t_mujoco import (
+    train_hopper_rl,
+    run_hopper_second_stage,
+    run_mujoco_rl,
+    halfcheetah_ablation,
+)
 
 
 def mujoco_rl_exp():

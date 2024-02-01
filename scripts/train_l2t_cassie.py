@@ -7,7 +7,6 @@ from stable_baselines3.common.callbacks import (
     CallbackList,
 )
 from stable_baselines3.common.vec_env import SubprocVecEnv
-
 from stable_baselines3.common.evaluation import evaluate_policy
 
 import wandb
@@ -29,16 +28,13 @@ except ImportError:
     tqdm = None
 
 from gymnasium.envs.registration import register
-
-from roboticsgym.algorithms.sb3.newAlgo import (
-    HIP,
-    EvalStudentCallback,
+from roboticsgym.algorithms.sb3.l2t_rl import (
+    L2TRL,
     evaluate_student_policy,
-    EvalTeacherCallback,
     evaluate_teacher_policy,
+    EvalStudentCallback,
+    EvalTeacherCallback,
 )
-
-from roboticsgym.algorithms.sb3.newAlgo_student_only import HIPSTUDENTONLY
 
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
@@ -1337,6 +1333,118 @@ def visualize_best_student():
     # Finish wandb run
 
     return mean_student_reward
+
+
+def train_rl_cassie_v6():
+    config = {
+        "teacher_policy_type": "L2TPolicy",
+        "student_policy_type": "L2TPolicy",
+        "total_timesteps": 5e6,
+        "env_id": "CassieMirror-v6",
+        "buffer_size": int(1e6),
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "progress_bar": True,
+        "verbose": 1,
+        "ent_coef": "auto",
+        "student_ent_coef": "auto",
+        "learning_rate": linear_schedule(3e-3),
+        "n_envs": 24,
+        "batch_size": 256,
+        "seed": 42,
+        "teacher_gamma": 0.99,
+        "student_gamma": 0.99,
+        "student_domain_randomization_scale": 0.1,
+        "explorer": "teacher",
+    }
+
+    run = wandb.init(
+        project="CoRL2024 Guided Learning",
+        config=config,
+        name=f"Cassie Imitation Learning L2T-{time.strftime('%Y-%m-%d-%H-%M-%S')}",
+        tags=[config["env_id"]],
+        sync_tensorboard=True,
+        save_code=False,
+        reinit=True,
+        notes="Add motor velocity, new_translationalAcceleration[:],",
+    )
+    wandb.run.log_code(".")
+
+    wandbcallback = WandbCallback()
+
+    train_env = make_vec_env(
+        config["env_id"],
+        n_envs=config["n_envs"],
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    teacher_eval_env = make_vec_env(
+        config["env_id"], n_envs=1, vec_env_cls=SubprocVecEnv
+    )
+
+    teacher_eval_callback = EvalTeacherCallback(
+        teacher_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
+        log_path=f"logs/{run.project}/{run.name}/teacher/",
+        eval_freq=20000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    student_eval_env = make_vec_env(
+        config["env_id"],
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+            "domain_randomization_scale": config["student_domain_randomization_scale"],
+        },
+    )
+    eval_student_callback = EvalStudentCallback(
+        student_eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/student/",
+        log_path=f"logs/{run.project}/{run.name}/student/",
+        eval_freq=20000,
+        n_eval_episodes=1,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    callback_list = CallbackList(
+        [teacher_eval_callback, wandbcallback, eval_student_callback]
+    )
+
+    rl_model = L2TRL(
+        policy=config["teacher_policy_type"],
+        student_policy=config["student_policy_type"],
+        env=train_env,
+        gamma=config["teacher_gamma"],
+        verbose=config["verbose"],
+        student_gamma=config["student_gamma"],
+        buffer_size=config["buffer_size"],
+        ent_coef=config["ent_coef"],
+        student_ent_coef=config["student_ent_coef"],
+        batch_size=config["batch_size"],
+        learning_rate=config["learning_rate"],
+        gradient_steps=config["gradient_steps"],
+        tensorboard_log=f"logs/tensorboard/{run.name}/",
+        seed=config["seed"],
+        student_domain_randomization_scale=config["student_domain_randomization_scale"],
+        explorer=config["explorer"],
+    )
+
+    # Model learning
+    rl_model.learn(
+        total_timesteps=config["total_timesteps"],
+        callback=callback_list,
+        progress_bar=config["progress_bar"],
+        log_interval=1000,
+    )
+
+    # Finish wandb run
+    run.finish()
 
 
 if __name__ == "__main__":
