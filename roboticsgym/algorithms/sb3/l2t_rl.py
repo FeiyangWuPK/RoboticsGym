@@ -34,20 +34,15 @@ from stable_baselines3.common.vec_env import (
     sync_envs_normalization,
     is_vecenv_wrapped,
 )
-from stable_baselines3.common.utils import update_learning_rate
 
 from roboticsgym.algorithms.sb3.policies import (
     Actor,
     CnnPolicy,
     MlpPolicy,
     MultiInputPolicy,
-    HIPPolicy,
+    L2TPolicy,
 )
-from roboticsgym.algorithms.sb3.inversepolicies import (
-    IPMDPolicy,
-    CnnPolicy,
-    MultiInputPolicy,
-)
+
 
 try:
     from tqdm import TqdmExperimentalWarning
@@ -60,12 +55,12 @@ except ImportError:
     # if the progress bar is used
     tqdm = None
 
-SelfHIP = TypeVar("SelfHIP", bound="HIP")
+SelfL2TRL = TypeVar("SelfL2TRL", bound="L2TRL")
 
 
-class HIP(OffPolicyAlgorithm):
+class L2TRL(OffPolicyAlgorithm):
     """
-    Hallucinated Inverse Policy mirror descent algorithm (HIP)
+    Hallucinated Inverse Policy mirror descent algorithm (L2T)
     Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,
     This implementation borrows code from original implementation (https://github.com/haarnoja/sac)
     from OpenAI Spinning Up (https://github.com/openai/spinningup), from the softlearning repo
@@ -139,19 +134,18 @@ class HIP(OffPolicyAlgorithm):
         "MlpPolicy": MlpPolicy,
         "CnnPolicy": CnnPolicy,
         "MultiInputPolicy": MultiInputPolicy,
-        "HIPPolicy": HIPPolicy,
-        "IPMDPolicy": IPMDPolicy,
+        "L2TPolicy": L2TPolicy,
     }
-    policy: HIPPolicy
+    policy: L2TPolicy
     actor: Actor
     critic: ContinuousCritic
     critic_target: ContinuousCritic
 
     def __init__(
         self,
-        policy: Union[str, Type[HIPPolicy], Type[IPMDPolicy]],
+        policy: Union[str, Type[L2TPolicy]],
         env: Union[GymEnv, str],
-        student_policy: Union[str, Type[IPMDPolicy]] = IPMDPolicy,
+        student_policy: Union[str, Type[L2TPolicy]] = L2TPolicy,
         learning_rate: Union[float, Schedule] = 3e-4,
         buffer_size: int = 1_000_000,  # 1e6
         learning_starts: int = 100,
@@ -233,33 +227,21 @@ class HIP(OffPolicyAlgorithm):
         self.student_policy_kwargs = (
             {} if student_policy_kwargs is None else student_policy_kwargs
         )
-        self.teacher_state_only_reward = teacher_state_only_reward
 
         # Update policy keyword arguments
         self.policy_kwargs["use_sde"] = self.use_sde
         self.student_policy_kwargs["use_sde"] = self.use_sde
-        self.policy_kwargs["state_only_reward"] = self.teacher_state_only_reward
-        self.student_policy_kwargs["state_only_reward"] = self.teacher_state_only_reward
+
         self.clip_range = clip_range
-
-        self.expert_replaybuffer = expert_replaybuffer
-        self.expert_replaybuffersize = expert_replaybuffersize
-
-        self.student_irl_begin_timesteps = student_begin
-
-        self.reward_reg_param = reward_reg_param
-
         self.explorer = explorer
         self.student_domain_randomization_scale = student_domain_randomization_scale
-        self.random_actions = None  # for CQL loss
-        self.testing_pomdp = testing_pomdp
-        self.thv_imitation_learning = thv_imitation_learning
+
         if _init_setup_model:
             self._setup_model()
 
     def _init_student_policy(
         self,
-        student_policy: Union[str, Type[IPMDPolicy]] = IPMDPolicy,
+        student_policy: Union[str, Type[L2TPolicy]] = L2TPolicy,
         student_policy_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         if isinstance(student_policy, str):
@@ -394,19 +376,6 @@ class HIP(OffPolicyAlgorithm):
                 float(self.student_ent_coef), device=self.device
             )
 
-        if not self.thv_imitation_learning:
-            self.expert_replay_buffer = ReplayBuffer(
-                self.expert_replaybuffersize,
-                observation_space=self.env.observation_space["state"],
-                action_space=self.env.action_space,
-                device=self.device,
-            )
-            self.load_replay_buffer_to(path=self.expert_replaybuffer)
-            self.expert_replay_data = self.expert_replay_buffer._get_samples(
-                np.arange(0, self.expert_replaybuffersize)
-            )
-            print("expert episodic reward", self.expert_replay_data.rewards.sum())
-
         self.student_batch_norm_stats = get_parameters_by_name(
             self.student_critic, ["running_"]
         )
@@ -418,16 +387,10 @@ class HIP(OffPolicyAlgorithm):
         self.actor = self.policy.actor
         self.critic = self.policy.critic
         self.critic_target = self.policy.critic_target
-        if isinstance(self.policy, IPMDPolicy) and not self.thv_imitation_learning:
-            print("Teacher using inverse RL")
-        else:
-            print("Teacher using Imitation Learning or RL")
-        self.reward_est = self.policy.reward_est
 
         self.student_actor = self.student_policy.actor
         self.student_critic = self.student_policy.critic
         self.student_critic_target = self.student_policy.critic_target
-        self.student_reward_est = self.student_policy.reward_est
 
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         # Switch to train mode (this affects batch norm / dropout)
@@ -457,9 +420,7 @@ class HIP(OffPolicyAlgorithm):
         student_actor_losses, student_critic_losses = [], []
         student_ent_coef_losses, student_ent_coefs = [], []
         average_reward_list = []
-        reward_est_losses = []
-        student_reward_est_losses = []
-        student_reward_est_eval_losses = []
+
         student_average_reward_list = []
 
         for gradient_step in range(gradient_steps):
@@ -499,23 +460,7 @@ class HIP(OffPolicyAlgorithm):
                 ent_coef_loss.backward()
                 self.ent_coef_optimizer.step()
 
-            # Compute estimated reward, either from
-            # IRL or from IL (which is defined in env)
-            if isinstance(self.policy, IPMDPolicy) and not self.thv_imitation_learning:
-                estimated_rewards = th.cat(
-                    self.reward_est(
-                        replay_data.observations["state"], replay_data.actions
-                    ),
-                    dim=1,
-                )
-                estimated_rewards_copy = estimated_rewards.clone().detach()
-
-            elif self.thv_imitation_learning:
-                estimated_rewards_copy = replay_data.rewards
-            else:
-                estimated_rewards_copy = replay_data.rewards
-            self.estimated_average_reward = estimated_rewards_copy.mean()
-            average_reward_list.append(self.estimated_average_reward.item())
+            average_reward_list.append(replay_data.rewards.mean())
             # teacher update critic and actor
             with th.no_grad():
                 # Select action according to policy
@@ -536,11 +481,11 @@ class HIP(OffPolicyAlgorithm):
                 ) * ent_coef * next_log_prob.reshape(-1, 1)
                 # td error + entropy term
                 target_q_values = (
-                    estimated_rewards_copy
+                    replay_data.rewards
                     + (1 - replay_data.dones) * self.gamma * next_q_values
                 )
 
-                target_q_values -= (self.gamma == 1) * estimated_rewards_copy.mean()
+                target_q_values -= (self.gamma == 1) * replay_data.rewards.mean()
 
             # Get current Q-values estimates for each critic network
             # using action from the replay buffer
@@ -559,10 +504,6 @@ class HIP(OffPolicyAlgorithm):
             self.critic.optimizer.zero_grad()
             critic_loss.backward()
             self.critic.optimizer.step()
-
-            # Compute the ratio of old and new
-            # _, log_prob_old = old_actor.action_log_prob(replay_data.observations)
-            # ratio = th.exp(log_prob.detach() - log_prob_old.detach())
 
             # Compute actor loss
             # Alternative: actor_loss = th.mean(log_prob - qf1_pi)
@@ -583,37 +524,6 @@ class HIP(OffPolicyAlgorithm):
             self.actor.optimizer.step()
 
             # Compute reward estimation loss
-            if isinstance(self.policy, IPMDPolicy) and not self.thv_imitation_learning:
-                # Get expert reward estimation
-                expert_estimated_rewards = th.cat(
-                    self.reward_est(
-                        self.expert_replay_data.observations,
-                        self.expert_replay_data.actions,
-                    ),
-                    dim=1,
-                )
-                estimated_rewards = th.cat(
-                    self.reward_est(
-                        replay_data.observations["state"], actions_pi.detach()
-                    ),
-                    dim=1,
-                )
-                # Compute dual objective plus regularization
-                # to ensure boundedness of he reward estimation
-                reward_est_loss = (
-                    estimated_rewards.mean()
-                    - expert_estimated_rewards.mean()
-                    + self.reward_reg_param
-                    * (
-                        th.linalg.norm(
-                            th.cat([estimated_rewards, expert_estimated_rewards])
-                        )
-                    )
-                )
-                reward_est_losses.append(reward_est_loss.item())
-                self.reward_est.optimizer.zero_grad()
-                reward_est_loss.backward()
-                self.reward_est.optimizer.step()
 
             # Update target networks
             if gradient_step % self.target_update_interval == 0:
@@ -664,21 +574,7 @@ class HIP(OffPolicyAlgorithm):
                 self.student_ent_coef_optimizer.step()
             self.student_ent_coef = self.ent_coef
             # Student update critic and actor, and update reward estimation
-            # Reward comes from IRl only
-            if not self.thv_imitation_learning:
-                student_estimated_rewards = th.cat(
-                    self.student_reward_est(student_replay_obs, replay_data.actions),
-                    dim=1,
-                )
-            if self.testing_pomdp or self.thv_imitation_learning:
-                student_estimated_rewards_copy = replay_data.rewards
-            else:
-                student_estimated_rewards_copy = student_estimated_rewards.detach()
-            if self.thv_imitation_learning:
-                student_estimated_rewards_copy = estimated_rewards_copy
-            self.estimated_student_average_reward = (
-                student_estimated_rewards_copy.mean()
-            )
+
             with th.no_grad():
                 # Select action according to policy
                 (
@@ -706,7 +602,7 @@ class HIP(OffPolicyAlgorithm):
                 ) * student_ent_coef * student_next_log_prob.reshape(-1, 1)
                 # td error + entropy term
                 student_target_q_values = (
-                    student_estimated_rewards_copy
+                    replay_data.rewards
                     + (1 - replay_data.dones)
                     * self.student_gamma
                     * student_next_q_values
@@ -714,7 +610,7 @@ class HIP(OffPolicyAlgorithm):
                 # handle average reward
                 student_target_q_values -= (
                     self.student_gamma == 1
-                ) * self.estimated_student_average_reward
+                ) * replay_data.rewards.mean()
 
             # Get current Q-values estimates for each critic network
             # using action from the replay buffer
@@ -760,16 +656,7 @@ class HIP(OffPolicyAlgorithm):
                 self.student_critic(student_replay_obs, student_actions_pi), dim=1
             )
             student_min_qf_pi, _ = th.min(student_q_values_pi, dim=1, keepdim=True)
-            if (
-                self.num_timesteps < int(self.student_irl_begin_timesteps)
-                or self.thv_imitation_learning
-            ):
-                student_actor_loss = F.mse_loss(student_actions_pi, actions_pi.detach())
-                # student_actor_loss += (
-                #     student_ent_coef.detach() * student_log_prob.detach()
-                #     - student_min_qf_pi.detach()
-                # ).mean()
-            elif self.explorer == "student":
+            if self.explorer == "student":
                 # Symmetric actor loss
                 student_actor_loss = (
                     student_ent_coef.detach() * student_log_prob.detach()
@@ -786,7 +673,9 @@ class HIP(OffPolicyAlgorithm):
                     student_ent_coef * student_log_prob - student_min_qf_pi
                 )
                 student_actor_loss = student_actor_loss.mean()
-                student_actor_loss += F.mse_loss(student_actions_pi, actions_pi.detach())
+                student_actor_loss += F.mse_loss(
+                    student_actions_pi, actions_pi.detach()
+                )
 
             student_actor_losses.append(student_actor_loss.item())
 
@@ -794,88 +683,7 @@ class HIP(OffPolicyAlgorithm):
             self.student_actor.optimizer.zero_grad()
             student_actor_loss.backward()
             self.student_actor.optimizer.step()
-            student_average_reward_list.append(
-                self.estimated_average_reward.cpu().numpy()
-            )
-
-            # Get expert reward estimation
-            if not self.thv_imitation_learning:
-                expert_estimated_rewards_from_student = th.cat(
-                    self.student_reward_est(
-                        self.expert_replay_data.observations,
-                        self.expert_replay_data.actions,
-                    ),
-                    dim=1,
-                )
-
-                # Compute dual objective plus regularization
-                student_estimated_rewards = th.cat(
-                    self.student_reward_est(
-                        student_replay_obs, student_actions_pi.detach()
-                    ),
-                    dim=1,
-                )
-
-                teacher_estimated_rewards = th.cat(
-                    self.reward_est(
-                        replay_data.observations["state"], actions_pi.detach()
-                    ),
-                    dim=1,
-                )
-
-                # # r(o_t, teacher action) \approx r(s_t, teacher action)
-                # student_estimated_rewards_of_teacher_action = th.cat(
-                #     self.student_reward_est(student_replay_obs, actions_pi.detach()),
-                #     dim=1,
-                # )
-
-                # teacher_estimated_rewards_of_teacher_action = th.cat(
-                #     self.reward_est(replay_data.observations["state"], actions_pi.detach()),
-                #     dim=1,
-                # )
-
-                student_reward_est_loss = (
-                    student_estimated_rewards.mean()
-                    - expert_estimated_rewards_from_student.mean()
-                    + self.reward_reg_param
-                    * (
-                        th.linalg.norm(
-                            th.cat(
-                                [
-                                    student_estimated_rewards,
-                                    expert_estimated_rewards_from_student,
-                                ]
-                            )
-                        )
-                    )
-                )
-                # student_reward_est_loss = F.mse_loss(
-                #     student_estimated_rewards, teacher_estimated_rewards.detach()
-                # )
-                # Student's reward estimation should be close to teacher's reward estimation on
-                # teacher's state, action, student's state, action, and expert data state and action
-                # if isinstance(self.policy, IPMDPolicy) and not self.testing_pomdp:
-                #     student_reward_est_loss += (
-                #         # F.mse_loss(
-                #         #     student_estimated_rewards,
-                #         #     teacher_estimated_rewards.detach(),
-                #         # )
-                #         # + F.mse_loss(
-                #         #     student_estimated_rewards_of_teacher_action,
-                #         #     teacher_estimated_rewards_of_teacher_action.detach(),
-                #         # )
-                #         F.mse_loss(
-                #             expert_estimated_rewards_from_student,
-                #             expert_estimated_rewards.detach(),
-                #         )
-                #     )
-                student_reward_est_losses.append(student_reward_est_loss.item())
-
-                # if self.num_timesteps > self.student_irl_begin_timesteps:
-                if not self.testing_pomdp:
-                    self.student_reward_est.optimizer.zero_grad()
-                    student_reward_est_loss.backward()
-                    self.student_reward_est.optimizer.step()
+            student_average_reward_list.append(replay_data.rewards.mean())
 
             # Update target networks
             if gradient_step % self.target_update_interval == 0:
@@ -913,8 +721,6 @@ class HIP(OffPolicyAlgorithm):
         self.logger.record("train/critic_loss", np.mean(critic_losses))
         self.logger.record("train/student_actor_loss", np.mean(student_actor_losses))
         self.logger.record("train/student_critic_loss", np.mean(student_critic_losses))
-        self.logger.record("train/student_est_loss", np.mean(student_reward_est_losses))
-        self.logger.record("train/reward_est_loss", np.mean(reward_est_losses))
         if len(ent_coef_losses) > 0:
             self.logger.record("train/ent_coef_loss", np.mean(ent_coef_losses))
 
@@ -926,14 +732,14 @@ class HIP(OffPolicyAlgorithm):
         return tensor
 
     def learn(
-        self: SelfHIP,
+        self: SelfL2TRL,
         total_timesteps: int,
         callback: MaybeCallback = None,
         log_interval: int = 4,
         tb_log_name: str = "PMD",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
-    ) -> SelfHIP:
+    ) -> SelfL2TRL:
         return super().learn(
             total_timesteps=total_timesteps,
             callback=callback,
@@ -951,7 +757,14 @@ class HIP(OffPolicyAlgorithm):
         ]  # noqa: RUF005
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
-        state_dicts = ["policy", "actor.optimizer", "critic.optimizer"]
+        state_dicts = [
+            "policy",
+            "actor.optimizer",
+            "critic.optimizer",
+            "student_policy",
+            "student_actor.optimizer",
+            "student_critic.optimizer",
+        ]
         if self.ent_coef_optimizer is not None:
             saved_pytorch_variables = ["log_ent_coef"]
             state_dicts.append("ent_coef_optimizer")
@@ -1066,24 +879,6 @@ class HIP(OffPolicyAlgorithm):
             return self.student_policy.predict(
                 observation["observation"], state, episode_start, deterministic
             )
-
-    def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
-        """
-        Get the name of the torch variables that will be saved with
-        PyTorch ``th.save``, ``th.load`` and ``state_dicts`` instead of the default
-        pickling strategy. This is to handle device placement correctly.
-
-        Names can point to specific variables under classes, e.g.
-        "policy.optimizer" would point to ``optimizer`` object of ``self.policy``
-        if this object.
-
-        :return:
-            List of Torch variables whose state dicts to save (e.g. th.nn.Modules),
-            and list of other Torch variables to store with ``th.save``.
-        """
-        state_dicts = ["policy", "student_policy"]
-
-        return state_dicts, []
 
 
 class EvalStudentCallback(EventCallback):
