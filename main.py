@@ -1,4 +1,4 @@
-from scripts.train_newalgo import (
+from scripts.train_l2t_cassie import (
     train_cassie_v4,
     train_cassie_v5,
     test_student_policy,

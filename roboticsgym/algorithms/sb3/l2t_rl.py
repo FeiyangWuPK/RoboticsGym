@@ -175,15 +175,8 @@ class L2TRL(OffPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
-        expert_replaybuffer: str = "",
-        expert_replaybuffersize: int = 6000,
-        student_begin: int = int(0),
-        reward_reg_param: float = 0.05,
-        teacher_state_only_reward: bool = False,
         student_domain_randomization_scale: float = 0.0,
         explorer: str = "teacher",
-        testing_pomdp: bool = False,
-        thv_imitation_learning: bool = False,
     ):
         super().__init__(
             policy,
@@ -253,15 +246,12 @@ class L2TRL(OffPolicyAlgorithm):
 
         # from off_policy_algorithm super()._setup_model()
         # partial_obversevation_space is from Environment's partial_observation_space
-        # self.partial_observation_space = self.env.get_attr("partial_observation_space")[0]
-        self.partial_observation_space = self.observation_space["observation"]
-        self.student_policy = (
-            self.student_policy_class(  # pytype:disable=not-instantiable
-                self.partial_observation_space,
-                self.action_space,
-                self.lr_schedule,
-                **self.student_policy_kwargs,  # pytype:disable=not-instantiable
-            )
+        self.partial_observation_space = self.observation_space["observation"]  # type: ignore
+        self.student_policy = self.student_policy_class(  # pytype:disable=not-instantiable
+            self.partial_observation_space,
+            self.action_space,
+            self.lr_schedule,
+            **self.student_policy_kwargs,  # pytype:disable=not-instantiable # type: ignore
         )
         self.student_policy = self.student_policy.to(self.device)
 
@@ -286,7 +276,7 @@ class L2TRL(OffPolicyAlgorithm):
                 replay_buffer_kwargs["env"] = self.env
             self.replay_buffer = self.replay_buffer_class(
                 self.buffer_size,
-                self.observation_space,
+                self.observation_space,  # type: ignore
                 self.action_space,
                 device=self.device,
                 n_envs=self.n_envs,
@@ -294,19 +284,19 @@ class L2TRL(OffPolicyAlgorithm):
                 **replay_buffer_kwargs,
             )
 
-        self.policy = self.policy_class(
-            self.observation_space["state"],
+        self.policy = self.policy_class(  # type: ignore
+            self.observation_space["state"],  # type: ignore
             self.action_space,
             self.lr_schedule,
             **self.policy_kwargs,
         )
-        self.policy = self.policy.to(self.device)
+        self.policy = self.policy.to(self.device)  # type: ignore
 
         # Convert train freq parameter to TrainFreq object
         self._convert_train_freq()
 
         self.clip_range = get_schedule_fn(self.clip_range)
-        self._init_student_policy(self.student_policy, self.student_policy_kwargs)
+        self._init_student_policy(self.student_policy, self.student_policy_kwargs)  # type: ignore
         self._create_aliases()
         # Running mean and running var
         self.batch_norm_stats = get_parameters_by_name(self.critic, ["running_"])
@@ -388,14 +378,14 @@ class L2TRL(OffPolicyAlgorithm):
         self.critic = self.policy.critic
         self.critic_target = self.policy.critic_target
 
-        self.student_actor = self.student_policy.actor
-        self.student_critic = self.student_policy.critic
-        self.student_critic_target = self.student_policy.critic_target
+        self.student_actor = self.student_policy.actor  # type: ignore
+        self.student_critic = self.student_policy.critic  # type: ignore
+        self.student_critic_target = self.student_policy.critic_target  # type: ignore
 
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
-        self.student_policy.set_training_mode(True)
+        self.student_policy.set_training_mode(mode=True)  # type: ignore
         # Update optimizers learning rate
         optimizers = [
             self.actor.optimizer,
@@ -434,7 +424,7 @@ class L2TRL(OffPolicyAlgorithm):
 
             # Action by the current actor for the sampled state
             actions_pi, log_prob = self.actor.action_log_prob(
-                replay_data.observations["state"]
+                replay_data.observations["state"]  # type: ignore
             )
             log_prob = log_prob.reshape(-1, 1)
 
@@ -465,12 +455,12 @@ class L2TRL(OffPolicyAlgorithm):
             with th.no_grad():
                 # Select action according to policy
                 next_actions, next_log_prob = self.actor.action_log_prob(
-                    replay_data.next_observations["state"]
+                    replay_data.next_observations["state"]  # type: ignore
                 )
                 # Compute the next Q values: min over all critics targets
                 next_q_values = th.cat(
                     self.critic_target(
-                        replay_data.next_observations["state"], next_actions
+                        replay_data.next_observations["state"], next_actions  # type: ignore
                     ),
                     dim=1,
                 )
@@ -490,7 +480,7 @@ class L2TRL(OffPolicyAlgorithm):
             # Get current Q-values estimates for each critic network
             # using action from the replay buffer
             current_q_values = self.critic(
-                replay_data.observations["state"], replay_data.actions
+                replay_data.observations["state"], replay_data.actions  # type: ignore
             )
 
             # Compute critic loss
@@ -509,7 +499,7 @@ class L2TRL(OffPolicyAlgorithm):
             # Alternative: actor_loss = th.mean(log_prob - qf1_pi)
             # Min over all critic networks
             q_values_pi = th.cat(
-                self.critic(replay_data.observations["state"], actions_pi), dim=1
+                self.critic(replay_data.observations["state"], actions_pi), dim=1  # type: ignore
             )
             min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
             actor_loss = ent_coef * log_prob - min_qf_pi
@@ -534,8 +524,8 @@ class L2TRL(OffPolicyAlgorithm):
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
 
             # Student update critic and actor, and update reward estimation
-            student_replay_obs = replay_data.observations["observation"]
-            student_replay_next_obs = replay_data.next_observations["observation"]
+            student_replay_obs = replay_data.observations["observation"]  # type: ignore
+            student_replay_next_obs = replay_data.next_observations["observation"]  # type: ignore
             # Action by the current actor for the sampled state
             student_actions_pi, student_log_prob = self.student_actor.action_log_prob(
                 student_replay_obs
@@ -557,7 +547,7 @@ class L2TRL(OffPolicyAlgorithm):
                     self.log_student_ent_coef
                     * (student_log_prob + self.target_entropy).detach()
                 ).mean()
-                student_ent_coef_losses.append(ent_coef_loss.item())
+                student_ent_coef_losses.append(ent_coef_loss.item())  # type: ignore
             else:
                 student_ent_coef = self.student_ent_coef_tensor
 
@@ -581,10 +571,6 @@ class L2TRL(OffPolicyAlgorithm):
                     student_next_actions,
                     student_next_log_prob,
                 ) = self.student_actor.action_log_prob(student_replay_next_obs)
-                # student_next_actions, student_next_log_prob = (
-                #     next_actions,
-                #     next_log_prob,
-                # )
 
                 # Compute the next Q values: min over all critics targets
                 student_next_q_values = th.cat(
@@ -665,7 +651,7 @@ class L2TRL(OffPolicyAlgorithm):
             else:
                 # Assymetric actor loss
                 q_values_pi = th.cat(
-                    self.critic(replay_data.observations["state"], student_actions_pi),
+                    self.critic(replay_data.observations["state"], student_actions_pi),  # type: ignore
                     dim=1,
                 )
                 student_min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
@@ -702,14 +688,14 @@ class L2TRL(OffPolicyAlgorithm):
         self._n_updates += gradient_steps
 
         # Adjust domain randomization scale
-        if self.env.env_is_wrapped:
-            self.env.unwrapped.domain_randomization_scale = (
+        if self.env.env_is_wrapped:  # type: ignore
+            self.env.unwrapped.domain_randomization_scale = (  # type: ignore
                 self.student_domain_randomization_scale
                 * (1 - self._current_progress_remaining),
             )
 
         else:
-            self.env.domain_randomization_scale = (
+            self.env.domain_randomization_scale = (  # type: ignore
                 self.student_domain_randomization_scale
                 * (1 - self._current_progress_remaining),
             )
@@ -792,8 +778,8 @@ class L2TRL(OffPolicyAlgorithm):
         :return: the model's action and the next hidden state
             (used in recurrent policies)
         """
-        return self.student_policy.predict(
-            observation["observation"], state, episode_start, deterministic
+        return self.student_policy.predict(  # type: ignore
+            observation["observation"], state, episode_start, deterministic  # type: ignore
         )
 
     def teacher_predict(
@@ -876,8 +862,8 @@ class L2TRL(OffPolicyAlgorithm):
                 observation["state"], state, episode_start, deterministic
             )
         else:
-            return self.student_policy.predict(
-                observation["observation"], state, episode_start, deterministic
+            return self.student_policy.predict(  # type: ignore
+                observation["observation"], state, episode_start, deterministic  # type: ignore
             )
 
 
@@ -940,7 +926,7 @@ class EvalStudentCallback(EventCallback):
 
         # Convert to VecEnv for consistency
         if not isinstance(eval_env, VecEnv):
-            eval_env = DummyVecEnv([lambda: eval_env])
+            eval_env = DummyVecEnv([lambda: eval_env])  # type: ignore
 
         self.eval_env = eval_env
         self.best_model_save_path = best_model_save_path
@@ -1178,7 +1164,7 @@ def evaluate_student_policy(
     states = None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
-        actions, states = model.student_predict(
+        actions, states = model.student_predict(  # type: ignore
             observations,  # type: ignore[arg-type]
             state=states,
             episode_start=episode_starts,
@@ -1232,7 +1218,7 @@ def evaluate_student_policy(
         )
     if return_episode_rewards:
         return episode_rewards, episode_lengths
-    return mean_reward, std_reward
+    return mean_reward, std_reward  # type: ignore
 
 
 class EvalTeacherCallback(EventCallback):
@@ -1294,7 +1280,7 @@ class EvalTeacherCallback(EventCallback):
 
         # Convert to VecEnv for consistency
         if not isinstance(eval_env, VecEnv):
-            eval_env = DummyVecEnv([lambda: eval_env])
+            eval_env = DummyVecEnv([lambda: eval_env])  # type: ignore
 
         self.eval_env = eval_env
         self.best_model_save_path = best_model_save_path
@@ -1532,7 +1518,7 @@ def evaluate_teacher_policy(
     states = None
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
-        actions, states = model.teacher_predict(
+        actions, states = model.teacher_predict(  # type: ignore
             observations,  # type: ignore[arg-type]
             state=states,
             episode_start=episode_starts,
@@ -1586,7 +1572,7 @@ def evaluate_teacher_policy(
         )
     if return_episode_rewards:
         return episode_rewards, episode_lengths
-    return mean_reward, std_reward
+    return mean_reward, std_reward  # type: ignore
 
 
 def conservative_q_loss(

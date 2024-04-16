@@ -4,6 +4,8 @@ import warnings
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Callable
 
+from gym.spaces import space
+import gymnasium
 import numpy as np
 import torch as th
 import gymnasium as gym
@@ -272,13 +274,14 @@ class L2T(OffPolicyAlgorithm):
         # from off_policy_algorithm super()._setup_model()
         # partial_obversevation_space is from Environment's partial_observation_space
         # self.partial_observation_space = self.env.get_attr("partial_observation_space")[0]
+        assert self.observation_space is gymnasium.spaces.Dict
         self.partial_observation_space = self.observation_space["observation"]
         self.student_policy = (
             self.student_policy_class(  # pytype:disable=not-instantiable
                 self.partial_observation_space,
                 self.action_space,
                 self.lr_schedule,
-                **self.student_policy_kwargs,  # pytype:disable=not-instantiable
+                **self.student_policy_kwargs,  # pytype:disable=not-instantiable # type: ignore
             )
         )
         self.student_policy = self.student_policy.to(self.device)

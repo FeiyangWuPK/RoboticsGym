@@ -531,6 +531,7 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             # new_rotationalVelocity = rotate_by_quaternion(
             #     state.pelvis.rotationalVelocity[:], quaternion
             # )
+
             useful_state = np.copy(
                 np.concatenate(
                     [
@@ -664,8 +665,8 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             obs = self.apply_randomization(
                 np.concatenate(
                     [
-                        state.joint.position[:],
-                        state.joint.velocity[:],
+                        joint_position,
+                        joint_velocity,
                     ]
                 )
             )

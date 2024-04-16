@@ -22,6 +22,12 @@ register(
 )
 
 register(
+    id="CassieMirror-v6",
+    entry_point="roboticsgym.envs.oldcassie_v6:OldCassieMirrorEnv",
+    max_episode_steps=600,
+)
+
+register(
     id="NoisyMujoco-v4",
     entry_point="roboticsgym.envs.noisy_mujoco:NoisyMujocoEnv",
     max_episode_steps=1000,
