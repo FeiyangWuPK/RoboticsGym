@@ -241,6 +241,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
 
         while total_timestep_count < total_timesteps:
             print("round: ", round_num)
+            print("total_timestep_count: ", total_timestep_count)
             collector = self.create_trajectory_collector()
             round_episode_count = 0
             round_timestep_count = 0
@@ -255,6 +256,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 combined_trajectories.extend(traj)
                 round_timestep_count += len(traj)
                 total_timestep_count += len(traj)
+
 
             round_episode_count += len(trajectories)
 

@@ -1,4 +1,7 @@
 import numpy as np
+import imageio
+from datetime import datetime
+from tqdm import tqdm
 
 from imitation.policies.serialize import load_policy
 from imitation.util import util
@@ -59,6 +62,40 @@ def train_dagger(env_name, n_envs, total_steps):
     )
 
     dagger_trainer.train(total_steps)
+
+    take_video_results(env_name, n_envs,dagger_trainer.policy)
+
+
+def take_video_results(env_name, n_envs, policy):
+    env = util.make_vec_env(
+        env_name,
+        rng=np.random.default_rng(),
+        n_envs=n_envs,
+        env_make_kwargs={"render_mode": "rgb_array"},
+    )
+        
+    print("Start video")
+    images_trainer = []
+    obs = env.reset()
+    print(env.render_mode)
+    dones = np.zeros(env.num_envs, dtype=bool)
+    img = env.render()
+    active = np.ones(env.num_envs, dtype=bool)
+    # while np.any(active):
+
+    for i in tqdm(range(200)):
+        images_trainer.append(img)
+        action, _ = policy.predict(obs)
+        obs, reward, dones, info = env.step(action)
+        img = env.render()
+
+        dones &= active
+        active &= ~dones
+        
+    print(len(images_trainer))
+
+    
+    imageio.mimsave(f'videos/dagger_trainer_{datetime.now().strftime("%d_%m_%Y_%H_%M")}.gif', images_trainer)
 
 
 
