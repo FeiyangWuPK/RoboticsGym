@@ -3,7 +3,7 @@ import numpy as np
 
 from stable_baselines3.common import vec_env
 from stable_baselines3.common.vec_env.base_vec_env import VecEnvStepReturn
-
+from stable_baselines3.common.policies import ActorCriticPolicy
 
 class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
     """DAgger VecEnvWrapper for querying and saving expert actions.
@@ -19,8 +19,10 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
     def __init__(
         self,
         venv: vec_env.VecEnv,
+        student_policy: ActorCriticPolicy,
         beta: float,
         rng: np.random.Generator,
+        is_env_noisy: bool = False,
     ) -> None:
         """Builds InteractiveTrajectoryCollector.
 
@@ -33,11 +35,16 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
 
         assert 0 <= beta <= 1
         self.beta = beta
+        self.is_env_noisy = is_env_noisy
         self._last_obs = None
         self._done_before = True
         self._is_reset = False
         self._last_user_actions = None
         self.rng = rng
+
+        self.student_policy = student_policy
+
+        print("BETA", self.beta)
 
     def seed(self, seed: int = None) -> list[int]:
         """Set the seed for the DAgger random number generator and wrapped VecEnv.
@@ -61,14 +68,18 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
         Returns:
             obs: first observation of a new trajectory.
         """
-
         obs = self.venv.reset()
-        assert isinstance(obs, np.ndarray)
+
+        if self.is_env_noisy:
+            state = obs['state']
+            obs = obs['observation']
+        else:
+            state = obs
 
         self._last_obs = obs
         self._is_reset = True
         self._last_user_actions = None
-        return obs
+        return state
 
     def step_async(self, actions: np.ndarray) -> None:
         """Steps with a `1 - beta` chance of using `self.get_robot_acts` instead.
@@ -97,7 +108,7 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
 
         mask = self.rng.uniform(0, 1, size=(self.num_envs,)) > self.beta
         if np.sum(mask) != 0:
-            actual_acts[mask] = self.get_robot_acts(self._last_obs[mask])
+            actual_acts[mask],_ = self.student_policy.predict(self._last_obs[mask])
 
         self._last_user_actions = actions
         self.venv.step_async(actual_acts)
@@ -108,13 +119,17 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
         Returns:
             Observation, reward, dones (is terminal?) and info dict.
         """
-        next_obs, rews, dones, infos = self.venv.step_wait()
+        if self.is_env_noisy:
+            next_obs_dict, rews, dones, infos = self.venv.step_wait()
+            next_obs = next_obs_dict['observation']
+            next_state = next_obs_dict['state']
+        else:
+            next_obs, rews, dones, infos = self.venv.step_wait()
+            next_state = next_obs
         
         assert isinstance(next_obs, np.ndarray)
         assert self._last_user_actions is not None
         self._last_obs = next_obs
 
-
-        return next_obs, rews, dones, infos
-    
+        return next_state, rews, dones, infos
 

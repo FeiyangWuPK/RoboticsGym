@@ -85,7 +85,6 @@ class BehaviorCloningLossCalculator:
 
 
 
-
 class BC:
     """Behavioral cloning (BC).
 
@@ -147,7 +146,7 @@ class BC:
         self.observation_space = observation_space
 
         self.rng = rng
-        print("observation_space", observation_space)
+
         if policy is None:
             extractor = (
                 torch_layers.CombinedExtractor
@@ -236,11 +235,8 @@ class BC:
                 loss.backward()
                 self.optimizer.step()
 
-                if batch_count % 100 == 0:
-                    print("loss", loss)
-                    
-
-           
+                # if batch_count % 100 == 0:
+                #     print("batch:", batch_count, "loss:", loss.item())
 
 
     @property

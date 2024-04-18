@@ -18,7 +18,6 @@ from stable_baselines3.common import policies, utils, vec_env
 from torch.utils.data import DataLoader
 
 
-
 from .beta_schedule import BetaSchedule,LinearBetaSchedule
 from .trajectory_collector import InteractiveTrajectoryCollector
 from .bc import BC
@@ -38,6 +37,7 @@ class DAggerTrainer():
         rng: np.random.Generator,
         beta_schedule: BetaSchedule = None,
         bc_trainer: BC,
+        is_env_noisy: bool = False,
     ):
         """Builds DAggerTrainer.
 
@@ -62,12 +62,13 @@ class DAggerTrainer():
         self._all_demos = []
         self.rng = rng
 
-        utils.check_for_correct_spaces(
-            self.venv,
-            bc_trainer.observation_space,
-            bc_trainer.action_space,
-        )
+        # utils.check_for_correct_spaces(
+        #     self.venv,
+        #     bc_trainer.observation_space,
+        #     bc_trainer.action_space,
+        # )
         self.bc_trainer = bc_trainer
+        self.is_env_noisy = is_env_noisy
 
 
     def __getstate__(self):
@@ -138,8 +139,10 @@ class DAggerTrainer():
         beta = self.beta_schedule(self.round_num)
         collector = InteractiveTrajectoryCollector(
             venv=self.venv,
+            student_policy=self.bc_trainer.policy,
             beta=beta,
             rng=self.rng,
+            is_env_noisy=self.is_env_noisy,
         )
         return collector
 
@@ -182,11 +185,11 @@ class SimpleDAggerTrainer(DAggerTrainer):
         )
 
         self.expert_policy = expert_policy
-        if expert_policy.observation_space != self.venv.observation_space:
-            raise ValueError("Mismatched observation space between expert_policy and venv")
+        # if expert_policy.observation_space != self.venv.observation_space:
+        #     raise ValueError("Mismatched observation space between expert_policy and venv")
         
-        if expert_policy.action_space != self.venv.action_space:
-            raise ValueError("Mismatched action space between expert_policy and venv")
+        # if expert_policy.action_space != self.venv.action_space:
+        #     raise ValueError("Mismatched action space between expert_policy and venv")
 
 
     def train(
@@ -234,6 +237,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
         round_num = 0
 
         combined_trajectories = []
+        self.venv.reset()
 
         while total_timestep_count < total_timesteps:
             print("round: ", round_num)
@@ -244,9 +248,9 @@ class SimpleDAggerTrainer(DAggerTrainer):
             trajectories = generate_trajectories(
                 policy=self.expert_policy,
                 venv=collector,
+                is_env_noisy=self.is_env_noisy,
             )
 
-            
             for traj in trajectories:
                 combined_trajectories.extend(traj)
                 round_timestep_count += len(traj)

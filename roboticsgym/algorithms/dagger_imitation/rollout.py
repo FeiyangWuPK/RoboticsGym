@@ -8,7 +8,9 @@ from .trajectory_accumulator import TrajectoryAccumulator
     
 def generate_trajectories(
     policy: BasePolicy,
-    venv: VecEnv ):
+    venv: VecEnv,
+    is_env_noisy: bool = False,
+      ):
     """Generate trajectory dictionaries from a policy and an environment.
     Args:
         policy: Can be any of the following:
@@ -29,18 +31,22 @@ def generate_trajectories(
         may be collected to avoid biasing process towards short episodes; the user
         should truncate if required.
     """
-
     trajectories = []
-    trajectories_accum = TrajectoryAccumulator(venv.num_envs, venv.observation_space.shape[0], venv.action_space.shape[0])
+    
+    num_actions = venv.action_space.shape[0]
+    if is_env_noisy:
+        num_obs = venv.observation_space['observation'].shape[0]
+    else:
+        num_obs = venv.observation_space.shape[0]
+
+    trajectories_accum = TrajectoryAccumulator(venv.num_envs, num_obs, num_actions)
 
     obs = venv.reset()
 
     active = np.ones(venv.num_envs, dtype=bool)
     dones = np.zeros(venv.num_envs, dtype=bool)
 
-    last_sum = 4
-
-    print("Start generate Traj")
+    print("Dagger Generate Trajectories")
     while np.any(active):
         acts, _ = policy.predict(obs,deterministic=True)
         next_obs, rews, dones, _ = venv.step(acts)
@@ -59,12 +65,5 @@ def generate_trajectories(
         trajectories.extend(new_trajs)
 
         active &= ~dones
-        #print(np.sum(active))
-        if (np.sum(active) < last_sum):
-            last_sum = np.sum(active)
-            print("active env sum ", np.sum(active))
-            print("active env", active)
-
-    print("END")
 
     return trajectories

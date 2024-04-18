@@ -13,8 +13,6 @@ class TrajectoryAccumulator(abc.ABC):
         
         self.partial_trajectories = {env_id: [] for env_id in range(self.num_envs)}
 
-        print("partial_trajectories", self.partial_trajectories)
-
 
     def add_step(self, env_id, step_dict):
         required_keys = {'obs', 'acts', 'rews', 'dones'}
@@ -30,7 +28,6 @@ class TrajectoryAccumulator(abc.ABC):
         
 
     def finish_trajectory(self, env_id):
-        print("finish_trajectory")
         part_dicts = self.partial_trajectories[env_id]
         del self.partial_trajectories[env_id]
 
