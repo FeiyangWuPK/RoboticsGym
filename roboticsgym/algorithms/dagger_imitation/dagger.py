@@ -6,13 +6,13 @@ expert's policy; over time, they shift to be drawn more and more from the imitat
 policy.
 """
 
-import logging
 import pathlib
 
 
 import numpy as np
 import torch as th
 from stable_baselines3.common import policies, utils, vec_env
+import stable_baselines3.common.logger as sb_logger
 
 
 from torch.utils.data import DataLoader
@@ -257,8 +257,12 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 round_timestep_count += len(traj)
                 total_timestep_count += len(traj)
 
-
             round_episode_count += len(trajectories)
+
+            # self.logger.record("dagger/total_timesteps_count", total_timestep_count)
+            # self.logger.record("dagger/round_num", round_num)
+            # self.logger.record("dagger/round_episode_count", round_episode_count)
+            # self.logger.record("dagger/round_timestep_count", round_timestep_count)
 
             rb = ReplayBuffer(combined_trajectories)
 

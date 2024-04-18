@@ -3,16 +3,24 @@ import imageio
 from datetime import datetime
 from tqdm import tqdm
 
+import logging
+
+import torch
+
 from imitation.policies.serialize import load_policy
 from imitation.util import util
 
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 
-
 from roboticsgym.algorithms.dagger_imitation import BC, SimpleDAggerTrainer
 
 from roboticsgym.envs.noisy_mujoco import NoisyMujocoEnv 
+
+
+from torch.utils.tensorboard import SummaryWriter
+
+
 
 def train_dagger(env_name, n_envs, total_steps):
     env = util.make_vec_env(
@@ -21,6 +29,11 @@ def train_dagger(env_name, n_envs, total_steps):
         n_envs=n_envs,
         env_make_kwargs={"render_mode": "rgb_array"},
     )
+
+    # logging.basicConfig(level=logging.INFO)
+    # logger = logging.getLogger(__name__)
+
+    
 
     obs = env.reset()
 
@@ -31,8 +44,6 @@ def train_dagger(env_name, n_envs, total_steps):
         venv=env,
     )
 
-    #venv = NoisyMujocoEnv(task=env_name, domain_randomization_scale=0.1)
-    
     train_env = make_vec_env(
             "NoisyMujoco-v4",
             n_envs=n_envs,
@@ -43,23 +54,28 @@ def train_dagger(env_name, n_envs, total_steps):
             },
         )
     
-    print("train_env.num_envs",train_env.num_envs)
-    print("train_env.action_space", train_env.action_space.shape[0])
-    print("train_env.observation_space", train_env.observation_space)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+
     
+    
+    tb_writer = SummaryWriter(log_dir='tensorboard/')
 
     bc_trainer = BC(
         observation_space=env.observation_space, 
         action_space=env.action_space, 
-        rng=np.random.default_rng())
+        rng=np.random.default_rng(),
+        device=device,
+        tb_writer=tb_writer)
 
     dagger_trainer = SimpleDAggerTrainer(
         venv=train_env,
+        rng=np.random.default_rng(),
         expert_policy=expert,
         bc_trainer=bc_trainer,
-        rng=np.random.default_rng(),
-        is_env_noisy=True
-    )
+        is_env_noisy=True)
+    
+    tb_writer.close()
 
     dagger_trainer.train(total_steps)
 

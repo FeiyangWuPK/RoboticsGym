@@ -11,12 +11,14 @@ import numpy as np
 
 from tqdm import tqdm
 from stable_baselines3.common import policies, torch_layers, utils, vec_env
-
+import stable_baselines3.common.logger as sb_logger
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from .networks import FeedForward32Policy    
+from .base import BaseImitationAlgorithm
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,8 +86,7 @@ class BehaviorCloningLossCalculator:
         )
 
 
-
-class BC:
+class BC(BaseImitationAlgorithm):
     """Behavioral cloning (BC).
 
     Recovers a policy via supervised learning from observation-action pairs.
@@ -103,8 +104,8 @@ class BC:
         optimizer_kwargs: dict = None,
         ent_weight: float = 1e-3,
         l2_weight: float = 0.0,
-        device: torch.device = "cpu",
-        
+        device: torch.device = "cpu",  
+        tb_writer: SummaryWriter,
     ):
         """Builds BC.
 
@@ -146,6 +147,7 @@ class BC:
         self.observation_space = observation_space
 
         self.rng = rng
+        self.tb_writer = tb_writer
 
         if policy is None:
             extractor = (
@@ -175,6 +177,8 @@ class BC:
 
         self.optimizer = optimizer_cls(self.policy.parameters(), **optimizer_kwargs)
         self.loss_calculator = BehaviorCloningLossCalculator(ent_weight, l2_weight)
+
+        self.sample_so_far = 0
 
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
             self.demonstrations =demonstrations 
@@ -218,16 +222,30 @@ class BC:
         """
 
         assert self.demonstrations is not None
-
+        
+        print("device", self.device)
+        print_sample_count = True
         for epoch in range(n_epochs):
             print("Epoch ", epoch)
-            for batch_count, batch in enumerate(tqdm(self.demonstrations, desc='Training '), 0):
+            print("Sample_so_far", self.sample_so_far)
+            for i, batch in enumerate(tqdm(self.demonstrations, desc='Training '), 0):
 
                 obs, acts = batch 
                 obs  = obs.to(self.device)
                 acts = acts.to(self.device)
 
+                self.sample_so_far += len(obs)
+                if(print_sample_count):
+                    print("sample_so_far",self.sample_so_far)
+                    print_sample_count = False
+
                 training_metrics = self.loss_calculator(self.policy, obs, acts)
+
+                self.tb_writer.add_scalar('Dagger/train_loss', training_metrics.loss, self.sample_so_far)
+                self.tb_writer.add_scalar('Dagger/train_negloss', training_metrics.neglogp, self.sample_so_far)
+                self.tb_writer.add_scalar('Dagger/train_entropy', training_metrics.entropy, self.sample_so_far)
+                self.tb_writer.add_scalar('Dagger/train_l2_norm', training_metrics.l2_norm, self.sample_so_far)
+                self.tb_writer.add_scalar('Dagger/train_l2_loss', training_metrics.l2_loss, self.sample_so_far)
 
                 loss = training_metrics.loss
                 
