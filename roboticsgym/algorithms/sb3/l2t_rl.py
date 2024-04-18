@@ -656,10 +656,10 @@ class L2TRL(OffPolicyAlgorithm):
                 )
                 student_min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
                 student_actor_loss = (
-                    student_ent_coef * student_log_prob - student_min_qf_pi
+                    ent_coef * student_log_prob - student_min_qf_pi
                 )
                 student_actor_loss = student_actor_loss.mean()
-                student_actor_loss += F.mse_loss(
+                student_actor_loss = F.mse_loss(
                     student_actions_pi, actions_pi.detach()
                 )
 

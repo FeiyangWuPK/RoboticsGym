@@ -1339,7 +1339,7 @@ def train_rl_cassie_v6():
     config = {
         "teacher_policy_type": "L2TPolicy",
         "student_policy_type": "L2TPolicy",
-        "total_timesteps": 2e7,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v6",
         "buffer_size": int(1e6),
         "train_freq": 1,
@@ -1348,7 +1348,7 @@ def train_rl_cassie_v6():
         "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 3e-5,
+        "learning_rate": linear_schedule(3e-3),
         "n_envs": 24,
         "batch_size": 256,
         "seed": 42,
@@ -1366,7 +1366,7 @@ def train_rl_cassie_v6():
         sync_tensorboard=True,
         save_code=False,
         reinit=True,
-        notes="",
+        notes="Add motor velocity, new_translationalAcceleration[:],",
     )
     wandb.run.log_code(".")
 
