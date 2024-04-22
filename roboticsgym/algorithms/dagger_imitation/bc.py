@@ -183,6 +183,8 @@ class BC(BaseImitationAlgorithm):
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
             self.demonstrations =demonstrations 
 
+    def save_policy(self,path):
+        self.policy.save(path)
 
     def train(
         self,

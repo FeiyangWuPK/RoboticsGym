@@ -77,9 +77,13 @@ def train_dagger(env_name, n_envs, total_steps):
     
     tb_writer.close()
 
+
+    
+
     dagger_trainer.train(total_steps)
 
-    take_video_results(env_name, n_envs,dagger_trainer.policy)
+    # dagger_trainer.save_policy("models/dagger_save")
+    # take_video_results(env_name, n_envs,dagger_trainer.policy)
 
 
 def take_video_results(env_name, n_envs, policy):

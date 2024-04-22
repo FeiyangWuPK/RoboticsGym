@@ -145,6 +145,10 @@ class DAggerTrainer():
             is_env_noisy=self.is_env_noisy,
         )
         return collector
+    
+
+    def save_policy(self,path):
+        self.bc_trainer.policy.save(path)
 
 
 class SimpleDAggerTrainer(DAggerTrainer):
@@ -194,8 +198,9 @@ class SimpleDAggerTrainer(DAggerTrainer):
 
     def train(
         self,
-        total_timesteps: int,
         *,
+        total_timesteps: int,
+        callback: BaseCallback,
         rollout_round_min_episodes: int = 3,
         rollout_round_min_timesteps: int = 500,
         bc_train_kwargs: dict = None,
@@ -249,6 +254,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
             trajectories = generate_trajectories(
                 policy=self.expert_policy,
                 venv=collector,
+                callback=callback,
                 is_env_noisy=self.is_env_noisy,
             )
 
