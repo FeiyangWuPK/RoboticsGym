@@ -41,8 +41,9 @@ from roboticsgym.algorithms.sb3.policies import (
     CnnPolicy,
     MlpPolicy,
     MultiInputPolicy,
-    HIPPolicy,
 )
+from roboticsgym.algorithms.sb3.policies import L2TPolicy as HIPPolicy
+
 from roboticsgym.algorithms.sb3.inversepolicies import (
     IPMDPolicy,
     CnnPolicy,
@@ -260,7 +261,7 @@ class HIPSTUDENTONLY(OffPolicyAlgorithm):
             self._setup_model()
 
         print(teacher_policy_path)
-        model = HIP.load(teacher_policy_path, env=self.env)
+        model = HIP.load(teacher_policy_path, env=None)
         self.teacher_policy = model.policy
         self.policy.load_state_dict(self.teacher_policy.state_dict())
 

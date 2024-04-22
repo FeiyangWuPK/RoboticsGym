@@ -35,6 +35,7 @@ from roboticsgym.algorithms.sb3.l2t_rl import (
     EvalStudentCallback,
     EvalTeacherCallback,
 )
+from roboticsgym.algorithms.sb3.newAlgo_student_only import HIPSTUDENTONLY
 
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
@@ -756,15 +757,15 @@ def imitation_learning_second_stage():
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
         "total_timesteps": 5e6,
-        "env_id": "CassieMirror-v5",
+        "env_id": "CassieMirror-v6",
         "buffer_size": int(1e6),
         "train_freq": 1,
         "gradient_steps": 1,
         "progress_bar": True,
-        "verbose": 1,
+        "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 5e-6,
+        "learning_rate": 3e-4,
         "n_envs": 24,
         "batch_size": 256,
         "seed": 42,
@@ -785,7 +786,7 @@ def imitation_learning_second_stage():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Final version - Student Imitation learning second stage",
+        name="Testing v6",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game

@@ -41,8 +41,9 @@ from roboticsgym.algorithms.sb3.policies import (
     CnnPolicy,
     MlpPolicy,
     MultiInputPolicy,
-    HIPPolicy,
 )
+from roboticsgym.algorithms.sb3.policies import L2TPolicy as HIPPolicy
+
 from roboticsgym.algorithms.sb3.inversepolicies import (
     IPMDPolicy,
     CnnPolicy,
@@ -787,7 +788,9 @@ class HIP(OffPolicyAlgorithm):
                     student_ent_coef * student_log_prob - student_min_qf_pi
                 )
                 student_actor_loss = student_actor_loss.mean()
-                student_actor_loss += F.smooth_l1_loss(student_actions_pi, actions_pi.detach())
+                student_actor_loss += F.smooth_l1_loss(
+                    student_actions_pi, actions_pi.detach()
+                )
 
             student_actor_losses.append(student_actor_loss.item())
 
