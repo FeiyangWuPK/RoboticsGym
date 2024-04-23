@@ -258,12 +258,13 @@ def evaluate_dagger_student_policy(
     current_rewards = np.zeros(n_envs)
     current_lengths = np.zeros(n_envs, dtype="int")
     observations = env.reset()
+
     states = None
 
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
         actions, _ = model.predict(
-            observation=observations,
+            observation=observations['observation'],
             episode_start=episode_starts,
             deterministic=deterministic,
         )

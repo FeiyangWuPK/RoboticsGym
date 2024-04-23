@@ -57,9 +57,13 @@ def train_dagger(env_name, n_envs, total_steps):
         )
     
     student_eval_env = make_vec_env(
-        env_name,
+        "NoisyMujoco-v4",
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
+        env_kwargs={
+                "task": env_name,
+                "domain_randomization_scale": 0.1,
+            },
     )
 
     student_eval_callback = EvalStudentCallback(
