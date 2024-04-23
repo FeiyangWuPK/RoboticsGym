@@ -3,13 +3,16 @@ import numpy as np
 
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.vec_env import VecEnv
+from .eval import EvalStudentCallback
 
 from .trajectory_accumulator import TrajectoryAccumulator
     
 def generate_trajectories(
     policy: BasePolicy,
     venv: VecEnv,
+    callback: EvalStudentCallback,
     is_env_noisy: bool = False,
+    num_timesteps: int = 0,
       ):
     """Generate trajectory dictionaries from a policy and an environment.
     Args:
@@ -50,6 +53,8 @@ def generate_trajectories(
     while np.any(active):
         acts, _ = policy.predict(obs,deterministic=True)
         next_obs, rews, dones, _ = venv.step(acts)
+
+        callback.on_step(num_timesteps=num_timesteps)
 
         dones &= active
 

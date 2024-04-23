@@ -183,8 +183,8 @@ class BC(BaseImitationAlgorithm):
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
             self.demonstrations =demonstrations 
 
-    def save_policy(self,path):
-        self.policy.save(path)
+    def save(self,path):
+        self.policy.save("save_bc")
 
     def train(
         self,
@@ -258,6 +258,11 @@ class BC(BaseImitationAlgorithm):
                 # if batch_count % 100 == 0:
                 #     print("batch:", batch_count, "loss:", loss.item())
 
+    def predict(self,observation: np.ndarray,
+                episode_start:np.ndarray = None,
+                deterministic: bool = False):
+        
+        return self.policy.predict(observation=observation,episode_start=episode_start, deterministic=deterministic)
 
     @property
     def policy(self) -> policies.ActorCriticPolicy:

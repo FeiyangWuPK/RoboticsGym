@@ -13,6 +13,9 @@ import numpy as np
 import torch as th
 from stable_baselines3.common import policies, utils, vec_env
 import stable_baselines3.common.logger as sb_logger
+from stable_baselines3.common.callbacks import BaseCallback
+
+from stable_baselines3.common import base_class
 
 
 from torch.utils.data import DataLoader
@@ -23,6 +26,7 @@ from .trajectory_collector import InteractiveTrajectoryCollector
 from .bc import BC
 from .rollout import generate_trajectories
 from .replay_buffer import ReplayBuffer
+from .eval import EvalStudentCallback
 
 
 DEFAULT_N_EPOCHS: int = 4
@@ -200,7 +204,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
         self,
         *,
         total_timesteps: int,
-        callback: BaseCallback,
+        callback: EvalStudentCallback,
         rollout_round_min_episodes: int = 3,
         rollout_round_min_timesteps: int = 500,
         bc_train_kwargs: dict = None,
@@ -244,6 +248,8 @@ class SimpleDAggerTrainer(DAggerTrainer):
         combined_trajectories = []
         self.venv.reset()
 
+        callback.init_callback(self.bc_trainer)
+
         while total_timestep_count < total_timesteps:
             print("round: ", round_num)
             print("total_timestep_count: ", total_timestep_count)
@@ -256,6 +262,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 venv=collector,
                 callback=callback,
                 is_env_noisy=self.is_env_noisy,
+                num_timesteps=total_timestep_count,
             )
 
             for traj in trajectories:

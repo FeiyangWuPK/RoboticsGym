@@ -40,4 +40,4 @@ class BaseImitationAlgorithm(abc.ABC):
     def __setstate__(self, state):
         self.__dict__.update(state)
         # callee should modify self.logger directly if they want to override this
-        self.logger = state.get("_logger") or imit_logger.configure()
+        self.logger = state.get("_logger")

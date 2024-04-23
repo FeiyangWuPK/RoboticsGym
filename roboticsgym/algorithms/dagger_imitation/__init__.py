@@ -9,3 +9,6 @@ from .replay_buffer import ReplayBuffer
 from .bc import BC
 
 from .trajectory_collector import InteractiveTrajectoryCollector
+
+
+from .eval import EvalStudentCallback

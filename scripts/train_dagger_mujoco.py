@@ -13,12 +13,14 @@ from imitation.util import util
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 
-from roboticsgym.algorithms.dagger_imitation import BC, SimpleDAggerTrainer
+from roboticsgym.algorithms.dagger_imitation import BC, SimpleDAggerTrainer, EvalStudentCallback
 
 from roboticsgym.envs.noisy_mujoco import NoisyMujocoEnv 
 
 
 from torch.utils.tensorboard import SummaryWriter
+
+
 
 
 
@@ -54,6 +56,23 @@ def train_dagger(env_name, n_envs, total_steps):
             },
         )
     
+    student_eval_env = make_vec_env(
+        env_name,
+        n_envs=1,
+        vec_env_cls=SubprocVecEnv,
+    )
+
+    student_eval_callback = EvalStudentCallback(
+        student_eval_env,
+        best_model_save_path=f"logs/dagger/student/",
+        log_path=f"logs/dagger/student/",
+        eval_freq=1000,
+        n_eval_episodes=5,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
@@ -80,7 +99,8 @@ def train_dagger(env_name, n_envs, total_steps):
 
     
 
-    dagger_trainer.train(total_steps)
+    dagger_trainer.train(total_timesteps=total_steps,
+                         callback=student_eval_callback)
 
     # dagger_trainer.save_policy("models/dagger_save")
     # take_video_results(env_name, n_envs,dagger_trainer.policy)
@@ -114,7 +134,6 @@ def take_video_results(env_name, n_envs, policy):
         
     print(len(images_trainer))
 
-    
     imageio.mimsave(f'videos/dagger_trainer_{datetime.now().strftime("%d_%m_%Y_%H_%M")}.gif', images_trainer)
 
 
