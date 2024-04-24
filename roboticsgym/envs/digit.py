@@ -7,7 +7,7 @@ import mujoco
 from mujoco._functions import mj_rnePostConstraint
 from mujoco._functions import mj_step
 
-from reference_trajectories.loadDigit import DigitTrajectory
+from roboticsgym.envs.reference_trajectories.loadDigit import DigitTrajectory
 
 from roboticsgym.utils.transform3d import (
     euler2quat,
@@ -40,7 +40,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 400,
+        "render_fps": 200,
     }
 
     def __init__(
@@ -71,13 +71,13 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         observation_space = Box(
             low=-np.inf,
             high=np.inf,
-            shape=(106,),
+            shape=(109,),
             dtype=np.float64,
         )
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/xml/digit-v3.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit_v3.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
@@ -87,7 +87,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
         # print(self.action_space.shape)
         self.ref_trajectory = DigitTrajectory(
-            "reference_trajectories/digit_state_downsample.csv"
+            os.getcwd()
+            + "/roboticsgym/envs/"
+            + "reference_trajectories/digit_state_downsample.csv"
         )
 
         initial_qpos, initial_qvel = self.ref_trajectory.state(0)
@@ -234,8 +236,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.root_quat = qpos[3:7]
         roll, pitch, yaw = quaternion2euler(self.root_quat)
         base_rot = euler2mat(0, 0, yaw, "sxyz")
-        self.root_lin_vel = np.transpose(base_rot).dot(self.qvel[0:3])
-        self.root_ang_vel = np.transpose(base_rot).dot(self.qvel[3:6])
+        self.root_lin_vel = np.transpose(base_rot).dot(qvel[0:3])
+        self.root_ang_vel = np.transpose(base_rot).dot(qvel[3:6])
         eular_angles = np.array([roll, pitch, yaw])
         return np.concatenate(
             (
@@ -260,7 +262,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             current_position = self.data.qpos[self.p_index]
             current_velocity = self.data.qvel[self.v_index]
 
-            torque = self.kp * (target_position - current_position) + self.kv * (
+            torque = self.kp * (target_position - current_position) + self.kd * (
                 target_velocity - current_velocity
             )
             self.data.ctrl[:] = torque
@@ -274,7 +276,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action):
         ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp + 1)
-        self.ref_qpos = ref_qpos()
+        self.ref_qpos = ref_qpos
         self.ref_qvel = ref_qvel
         self.timestamp += 1
 

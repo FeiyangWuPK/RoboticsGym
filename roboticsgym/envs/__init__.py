@@ -32,3 +32,9 @@ register(
     entry_point="roboticsgym.envs.noisy_mujoco:NoisyMujocoEnv",
     max_episode_steps=1000,
 )
+
+register(
+    id="Digit-v1",
+    entry_point="roboticsgym.envs.digit:DigitEnv",
+    max_episode_steps=1000,
+)

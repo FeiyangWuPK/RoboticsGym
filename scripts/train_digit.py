@@ -65,10 +65,7 @@ def train_digit_sac():
     """
 
     # Create the environment
-    env = make_vec_env("Digit-v1", n_envs=4)
-
-    # Create the evaluation environment
-    eval_env = make_vec_env("Digit-v1", n_envs=1)
+    env = make_vec_env("Digit-v1", n_envs=20)
 
     # Create the model
     model = SAC(
@@ -80,7 +77,4 @@ def train_digit_sac():
     )
 
     # Train the model
-    model.learn(total_timesteps=int(1e6), log_interval=1)
-
-    # Save the model
-    model.save("digit_sac")
+    model.learn(total_timesteps=int(5e6), log_interval=100, progress_bar=True)
