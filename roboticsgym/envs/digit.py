@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from gymnasium.envs.mujoco import MujocoEnv
+from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 from gymnasium import utils
 from gymnasium.spaces import Box
 import mujoco
@@ -84,20 +84,16 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             **kwargs,
         )
         # overriding action space
-        self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
+        self.action_space = Box(low=-1.0, high=1.0, shape=(20,), dtype=np.float32)  # type: ignore
         # print(self.action_space.shape)
         self.ref_trajectory = DigitTrajectory(
             os.getcwd()
             + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_downsample.csv"
+            + "reference_trajectories/digit_state_20240422.csv"
         )
 
-        initial_qpos, initial_qvel = self.ref_trajectory.state(0)
-
-        self.init_qpos = initial_qpos
-        self.init_qvel = initial_qvel
-        self.ref_qpos = initial_qpos
-        self.ref_qvel = initial_qvel
+        self.init_qpos, self.init_qvel = self.ref_trajectory.state(0)
+        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(0)
 
         # Index from README. The toes are actuated by motor A and B.
         self.p_index = [
@@ -225,8 +221,6 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         position = qpos[self.p_index]
         velocity = qvel[self.v_index]
 
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp)
-
         com_inertia = self.data.cinert.flat.copy()
         com_velocity = self.data.cvel.flat.copy()
 
@@ -247,10 +241,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
                 qpos[:7],
                 position,
                 velocity,
-                ref_qpos[:7],
-                ref_qvel[:6],
-                ref_qpos[self.p_index],
-                ref_qvel[self.v_index],
+                self.ref_qpos[:7],
+                self.ref_qvel[:6],
+                self.ref_qpos[self.p_index],
+                self.ref_qvel[self.v_index],
             )
         )
 
@@ -275,14 +269,14 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # mj_rnePostConstraint(self.model, self.data)
 
     def step(self, action):
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp + 1)
-        self.ref_qpos = ref_qpos
-        self.ref_qvel = ref_qvel
-        self.timestamp += 1
+        # 5 because recording is 1000hz and simulation is (2000/10)=200hz
+        self.timestamp += 5
+
+        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
         xy_position_before = mass_center(self.model, self.data)
         # print(action)
-        q_pos_modified = action + ref_qpos[self.p_index]
+        q_pos_modified = action + self.ref_qpos[self.p_index]
 
         self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
 
@@ -304,13 +298,13 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         tracking_reward = (
             0.5
             * np.exp(
-                -np.linalg.norm(ref_qpos[self.p_index] - qpos[self.p_index], ord=2)
+                -np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index], ord=2)
             )
             + 0.3
             * np.exp(
-                -np.linalg.norm(ref_qvel[self.v_index] - qvel[self.v_index], ord=2)
+                -np.linalg.norm(self.ref_qvel[self.v_index] - qvel[self.v_index], ord=2)
             )
-            + 0.2 * np.exp(-np.linalg.norm(ref_qpos[:3] - qpos[:3], ord=2))
+            + 0.2 * np.exp(-np.linalg.norm(self.ref_qpos[:3] - qpos[:3], ord=2))
         )
 
         reward = forward_reward + healthy_reward + tracking_reward - ctrl_cost
@@ -348,10 +342,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         return observation
 
-    def viewer_setup(self):
-        assert self.viewer is not None
-        for key, value in DEFAULT_CAMERA_CONFIG.items():
-            if isinstance(value, np.ndarray):
-                getattr(self.viewer.cam, key)[:] = value
-            else:
-                setattr(self.viewer.cam, key, value)
+    # def viewer_setup(self):
+    #     assert self.viewer is not None
+    #     for key, value in DEFAULT_CAMERA_CONFIG.items():
+    #         if isinstance(value, np.ndarray):
+    #             getattr(self.viewer.cam, key)[:] = value
+    #         else:
+    #             setattr(self.viewer.cam, key, value)
