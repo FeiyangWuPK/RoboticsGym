@@ -10,15 +10,20 @@ import gymnasium as gym
 import numpy as np
 
 from tqdm import tqdm
-from stable_baselines3.common import policies, torch_layers, utils, vec_env
-import stable_baselines3.common.logger as sb_logger
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union, Mapping
+from stable_baselines3.common import torch_layers, utils, vec_env
+
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
+from stable_baselines3.common.policies import BasePolicy, ActorCriticPolicy
+
+from stable_baselines3.common.base_class import BaseAlgorithm
+
+
 
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
-from .networks import FeedForward32Policy    
-from .base import BaseImitationAlgorithm
+from .networks import FeedForward32Policy
 
 
 @dataclasses.dataclass(frozen=True)
@@ -42,7 +47,7 @@ class BehaviorCloningLossCalculator:
 
     def __call__(
         self,
-        policy: policies.ActorCriticPolicy,
+        policy: BasePolicy,
         obs: torch.Tensor,
         acts: torch.Tensor,
     ) -> BCTrainingMetrics:
@@ -59,6 +64,8 @@ class BehaviorCloningLossCalculator:
         """
         # policy.evaluate_actions's type signatures are incorrect.
         # See https://github.com/DLR-RM/stable-baselines3/issues/1679
+
+
         (_, log_prob, entropy) = policy.evaluate_actions(obs, acts)
 
         prob_true_act = torch.exp(log_prob).mean()
@@ -86,7 +93,7 @@ class BehaviorCloningLossCalculator:
         )
 
 
-class BC(BaseImitationAlgorithm):
+class BC(BaseAlgorithm):
     """Behavioral cloning (BC).
 
     Recovers a policy via supervised learning from observation-action pairs.
@@ -94,79 +101,56 @@ class BC(BaseImitationAlgorithm):
     def __init__(
         self,
         *,
-        observation_space: gym.Space,
-        action_space: gym.Space,
+        env: Union[GymEnv, str, None],
+        policy: Union[str, Type[BasePolicy]] = None,
+        learning_rate: Union[float, Schedule] = None,
+        policy_kwargs: Optional[Dict[str, Any]] = None,
+        device: Union[torch.device, str] = "auto",
+
         rng: np.random.Generator,
-        policy: policies.ActorCriticPolicy = None,
-        demonstrations: DataLoader = None,
+
         batch_size: int = 32,
-        optimizer_cls: torch.optim.Optimizer = torch.optim.Adam,
-        optimizer_kwargs: dict = None,
+        n_epochs: int = 4,
+        optimizer_cls: Type[torch.optim.Optimizer] = torch.optim.Adam,
+        optimizer_kwargs: Optional[Mapping[str, Any]] = None,
         ent_weight: float = 1e-3,
         l2_weight: float = 0.0,
-        device: torch.device = "cpu",  
-        tb_writer: SummaryWriter,
     ):
-        """Builds BC.
+        print("start init")
+        print("batch_size",batch_size)
+        self._batch_size = batch_size
+        self.n_epochs = n_epochs
+      
+        print("yop")
 
-        Args:
-            observation_space: the observation space of the environment.
-            action_space: the action space of the environment.
-            rng: the random state to use for the random number generator.
-            policy: a Stable Baselines3 policy; if unspecified,
-                defaults to `FeedForward32Policy`.
-            demonstrations: dataLoader 
-            batch_size: The number of samples in each batch of expert data.
-            minibatch_size: size of minibatch to calculate gradients over.
-                The gradients are accumulated until `batch_size` examples
-                are processed before making an optimization step. This
-                is useful in GPU training to reduce memory usage, since
-                fewer examples are loaded into memory at once,
-                facilitating training with larger batch sizes, but is
-                generally slower. Must be a factor of `batch_size`.
-                Optional, defaults to `batch_size`.
-            optimizer_cls: supervised training optimizer
-            optimizer_kwargs: keyword arguments, excluding learning rate and
-                weight decay, for optimiser construction.
-            ent_weight: scaling applied to the policy's entropy regularization.
-            l2_weight: scaling applied to the policy's L2 regularization.
-            device: name/identity of device to place policy on.
-            custom_logger: Where to log to; if None (default), creates a new logger.
+        self.action_space = env.action_space
+        self.observation_space = env.observation_space
 
-        Raises:
-            ValueError: If `weight_decay` is specified in `optimizer_kwargs` (use the
-                parameter `l2_weight` instead), or if the batch size is not a multiple
-                of the minibatch size.
-        """
-        super().__init__()
-        self.device = device
-        self.batch_size = batch_size
-        self.demonstrations = demonstrations
-        
-        self.action_space = action_space
-        self.observation_space = observation_space
+        if isinstance(env.observation_space, gym.spaces.Dict):
+            print("dedans")
+            self.observation_space = self.observation_space['observation']
 
-        self.rng = rng
-        self.tb_writer = tb_writer
+        print("self.observation_space",  type(self.observation_space))
+        print("self.action_space",type(self.action_space))
 
         if policy is None:
             extractor = (
                 torch_layers.CombinedExtractor
-                if isinstance(observation_space, gym.spaces.Dict)
-                else 
+                if False
+                else
                 torch_layers.FlattenExtractor
             )
             policy = FeedForward32Policy(
-                observation_space=observation_space,
-                action_space=action_space,
+                observation_space=self.observation_space,
+                action_space=self.action_space,
                 # Set lr_schedule to max value to force error if policy.optimizer
                 # is used by mistake (should use self.optimizer instead).
                 lr_schedule=lambda _: torch.finfo(torch.float32).max,
                 features_extractor_class=extractor,
             )
-        
-        self._policy = policy.to(utils.get_device(device))
 
+
+        self._policy = policy.to(utils.get_device(device))
         assert self.policy.observation_space == self.observation_space
         assert self.policy.action_space == self.action_space
 
@@ -178,24 +162,38 @@ class BC(BaseImitationAlgorithm):
         self.optimizer = optimizer_cls(self.policy.parameters(), **optimizer_kwargs)
         self.loss_calculator = BehaviorCloningLossCalculator(ent_weight, l2_weight)
 
+        self.rng = rng
         self.sample_so_far = 0
 
+        super().__init__(
+            policy=self.policy,
+            env=env,
+            learning_rate=self.optimizer.param_groups[0]['lr'],
+            device=device,
+            support_multi_env=True,
+        )
+
+        print("INIT END")
+        print(self.observation_space)
+        print(f'Using device: {self.device}')
+        print("batch",  self.batch_size)
+
+
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
-            self.demonstrations =demonstrations 
+            self.demonstrations =demonstrations
 
     def save(self,path):
         self.policy.save("save_bc")
 
-    def train(
+    def learn(
         self,
         *,
-        n_epochs: int = None,
-        n_batches: int = None,
+        total_timesteps: int = None,
+        callback: MaybeCallback = None,
         log_interval: int = 500,
-        log_rollouts_venv: vec_env.VecEnv = None,
-        log_rollouts_n_episodes: int = 5,
-        progress_bar: bool = True,
-        reset_tensorboard: bool = False,
+        tb_log_name: str = "run",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
     ):
         """Train with supervised learning for some number of epochs.
 
@@ -222,17 +220,27 @@ class BC(BaseImitationAlgorithm):
                 even if `.train()` logged to Tensorboard previously. Has no practical
                 effect if `.train()` is being called for the first time.
         """
-
         assert self.demonstrations is not None
-        
+
+        # super().learn(
+        #     total_timesteps=total_timesteps,
+        #     callback=callback,
+        #     log_interval=log_interval,
+        #     tb_log_name=tb_log_name,
+        #     reset_num_timesteps=reset_num_timesteps,
+        #     progress_bar=progress_bar,
+        # )
+
+
         print("device", self.device)
         print_sample_count = True
-        for epoch in range(n_epochs):
+        for epoch in range(self.n_epochs):
             print("Epoch ", epoch)
             print("Sample_so_far", self.sample_so_far)
             for i, batch in enumerate(tqdm(self.demonstrations, desc='Training '), 0):
 
-                obs, acts = batch 
+                states, obs, acts = batch
+                states = states.to(self.device)
                 obs  = obs.to(self.device)
                 acts = acts.to(self.device)
 
@@ -241,16 +249,11 @@ class BC(BaseImitationAlgorithm):
                     print("sample_so_far",self.sample_so_far)
                     print_sample_count = False
 
-                training_metrics = self.loss_calculator(self.policy, obs, acts)
-
-                self.tb_writer.add_scalar('Dagger/train_loss', training_metrics.loss, self.sample_so_far)
-                self.tb_writer.add_scalar('Dagger/train_negloss', training_metrics.neglogp, self.sample_so_far)
-                self.tb_writer.add_scalar('Dagger/train_entropy', training_metrics.entropy, self.sample_so_far)
-                self.tb_writer.add_scalar('Dagger/train_l2_norm', training_metrics.l2_norm, self.sample_so_far)
-                self.tb_writer.add_scalar('Dagger/train_l2_loss', training_metrics.l2_loss, self.sample_so_far)
+                
+                training_metrics = self.loss_calculator(self.policy, states, acts)
 
                 loss = training_metrics.loss
-                
+
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -258,13 +261,24 @@ class BC(BaseImitationAlgorithm):
                 # if batch_count % 100 == 0:
                 #     print("batch:", batch_count, "loss:", loss.item())
 
+
     def predict(self,observation: np.ndarray,
                 episode_start:np.ndarray = None,
                 deterministic: bool = False):
-        
+
         return self.policy.predict(observation=observation,episode_start=episode_start, deterministic=deterministic)
 
     @property
-    def policy(self) -> policies.ActorCriticPolicy:
+    def policy(self) -> BasePolicy:
         return self._policy
+    
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
+
+
+    def _setup_model():
+        return
+
+
 

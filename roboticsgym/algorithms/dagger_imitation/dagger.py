@@ -8,16 +8,18 @@ policy.
 
 import pathlib
 
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Mapping
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, RolloutReturn, Schedule, TrainFreq, TrainFrequencyUnit
 
 import numpy as np
 import torch as th
 from stable_baselines3.common import policies, utils, vec_env
 import stable_baselines3.common.logger as sb_logger
 from stable_baselines3.common.callbacks import BaseCallback
-
+from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common import base_class
 
-
+import torch
 from torch.utils.data import DataLoader
 
 
@@ -32,21 +34,33 @@ from .eval import EvalStudentCallback
 DEFAULT_N_EPOCHS: int = 4
 
 
-class DAggerTrainer():
+class DAggerTrainer(BC):
     """The default number of BC training epochs in `extend_and_update`."""
     def __init__(
         self,
-        *,
-        venv: vec_env.VecEnv,
+        *,       
+        env: Union[GymEnv, str, None],
+        policy: Union[str, Type[BasePolicy]] = None,
+        learning_rate: Union[float, Schedule] = None,
+        policy_kwargs: Optional[Dict[str, Any]] = None,
+        device: Union[torch.device, str] = "auto",
         rng: np.random.Generator,
+        batch_size: int = 32,
+        n_epochs: int = DEFAULT_N_EPOCHS,
+        optimizer_cls: Type[torch.optim.Optimizer] = torch.optim.Adam,
+        optimizer_kwargs: Optional[Mapping[str, Any]] = None,
+        ent_weight: float = 1e-3,
+        l2_weight: float = 0.0,
+
+        expert_policy: policies.BasePolicy,
         beta_schedule: BetaSchedule = None,
-        bc_trainer: BC,
         is_env_noisy: bool = False,
     ):
         """Builds DAggerTrainer.
 
         Args:
-            venv: Vectorized training environment.
+            env: Gym training environment.
+            expert_policy: The expert policy used to generate synthetic demonstrations.
             rng: random state for random number generation.
             beta_schedule: Provides a value of `beta` (the probability of taking
                 expert action in any given state) at each round of training. If
@@ -54,82 +68,34 @@ class DAggerTrainer():
             bc_trainer: A `BC` instance used to train the underlying policy.
 
         """
-        super().__init__()
+        super().__init__(env=env,
+                        policy=policy, 
+                        learning_rate=learning_rate, 
+                        policy_kwargs=policy_kwargs,
+                        device=device,
+                        rng=rng,
+                        batch_size=batch_size,
+                        n_epochs=n_epochs,
+                        optimizer_cls=optimizer_cls,
+                        optimizer_kwargs=optimizer_kwargs,
+                        ent_weight=ent_weight,
+                        l2_weight=l2_weight)
 
         if beta_schedule is None:
             beta_schedule = LinearBetaSchedule(15)
 
         self.beta_schedule = beta_schedule
-        self.venv = venv
         self.round_num = 0
         self._last_loaded_round = -1
-        self._all_demos = []
-        self.rng = rng
-
-        # utils.check_for_correct_spaces(
-        #     self.venv,
-        #     bc_trainer.observation_space,
-        #     bc_trainer.action_space,
-        # )
-        self.bc_trainer = bc_trainer
         self.is_env_noisy = is_env_noisy
 
-
-    def __getstate__(self):
-        """Return state excluding non-pickleable objects."""
-        d = dict(self.__dict__)
-        del d["venv"]
-
-        return d
-
-    @property
-    def policy(self) -> policies.BasePolicy:
-        return self.bc_trainer.policy
-
-    @property
-    def batch_size(self) -> int:
-        return self.bc_trainer.batch_size
-
-    def extend_and_update(
-        self,
-        bc_train_kwargs: dict = None,
-    ) -> int:
-        """Extend internal batch of data and train BC.
-
-        Specifically, this method will load new transitions (if necessary), train
-        the model for a while, and advance the round counter. If there are no fresh
-        demonstrations in the demonstration directory for the current round, then
-        this will raise a `NeedsDemosException` instead of training or advancing
-        the round counter. In that case, the user should call
-        `.create_trajectory_collector()` and use the returned
-        `InteractiveTrajectoryCollector` to produce a new set of demonstrations for
-        the current interaction round.
-
-        Arguments:
-            bc_train_kwargs: Keyword arguments for calling `BC.train()`. If
-                the `log_rollouts_venv` key is not provided, then it is set to
-                `self.venv` by default. If neither of the `n_epochs` and `n_batches`
-                keys are provided, then `n_epochs` is set to `self.DEFAULT_N_EPOCHS`.
-
-        Returns:
-            New round number after advancing the round counter.
-        """
-        if bc_train_kwargs is None:
-            bc_train_kwargs = {}
-        else:
-            bc_train_kwargs = dict(bc_train_kwargs)
-
-        user_keys = bc_train_kwargs.keys()
-        if "log_rollouts_venv" not in user_keys:
-            bc_train_kwargs["log_rollouts_venv"] = self.venv
-
-        if "n_epochs" not in user_keys and "n_batches" not in user_keys:
-            bc_train_kwargs["n_epochs"] = DEFAULT_N_EPOCHS
-
-
-        self.bc_trainer.train(**bc_train_kwargs)
-        self.round_num += 1
-        return self.round_num
+        self.expert_policy = expert_policy
+        # if expert_policy.observation_space != self.venv.observation_space:
+        #     raise ValueError("Mismatched observation space between expert_policy and venv")
+        
+        # if expert_policy.action_space != self.venv.action_space:
+        #     raise ValueError("Mismatched action space between expert_policy and venv")
+      
 
     def create_trajectory_collector(self) -> InteractiveTrajectoryCollector:
         """Create trajectory collector to extend current round's demonstration set.
@@ -139,66 +105,16 @@ class DAggerTrainer():
             for the current round. Refer to the documentation for
             `InteractiveTrajectoryCollector` to see how to use this.
         """
-
         beta = self.beta_schedule(self.round_num)
         collector = InteractiveTrajectoryCollector(
-            venv=self.venv,
-            student_policy=self.bc_trainer.policy,
+            env=self.env,
+            student_policy=self.policy,
             beta=beta,
             rng=self.rng,
-            is_env_noisy=self.is_env_noisy,
         )
+
         return collector
     
-
-    def save_policy(self,path):
-        self.bc_trainer.policy.save(path)
-
-
-class SimpleDAggerTrainer(DAggerTrainer):
-    """Simpler subclass of DAggerTrainer for training with synthetic feedback."""
-
-    def __init__(
-        self,
-        *,
-        venv: vec_env.VecEnv,
-        expert_policy: policies.BasePolicy,
-        rng: np.random.Generator,
-        expert_trajs: list = None,
-        **dagger_trainer_kwargs,
-    ):
-        """Builds SimpleDAggerTrainer.
-
-        Args:
-            venv: Vectorized training environment. Note that when the robot
-                action is randomly injected (in accordance with `beta_schedule`
-                argument), every individual environment will get a robot action
-                simultaneously for that timestep.
-
-            expert_policy: The expert policy used to generate synthetic demonstrations.
-            rng: Random state to use for the random number generator.
-            expert_trajs: Optional starting dataset that is inserted into the round 0
-                dataset.
-            dagger_trainer_kwargs: Other keyword arguments passed to the
-                superclass initializer `DAggerTrainer.__init__`.
-
-        Raises:
-            ValueError: The observation or action space does not match between
-                `venv` and `expert_policy`.
-        """
-        super().__init__(
-            venv=venv,
-            rng=rng,
-            **dagger_trainer_kwargs,
-        )
-
-        self.expert_policy = expert_policy
-        # if expert_policy.observation_space != self.venv.observation_space:
-        #     raise ValueError("Mismatched observation space between expert_policy and venv")
-        
-        # if expert_policy.action_space != self.venv.action_space:
-        #     raise ValueError("Mismatched action space between expert_policy and venv")
-
 
     def train(
         self,
@@ -243,25 +159,29 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 keys are provided, then `n_epochs` is set to `self.DEFAULT_N_EPOCHS`.
         """
         total_timestep_count = 0
-        round_num = 0
+        self.round_num = 0
 
         combined_trajectories = []
-        self.venv.reset()
+        self.env.reset()
 
-        callback.init_callback(self.bc_trainer)
+        # callback.init_callback(self.bc_trainer)
+
+        # callback.on_training_start(locals(), globals())
+
+        assert self.env is not None, "You must set the environment before calling learn()"
 
         while total_timestep_count < total_timesteps:
-            print("round: ", round_num)
+            print("round: ", self.round_num)
             print("total_timestep_count: ", total_timestep_count)
             collector = self.create_trajectory_collector()
+
             round_episode_count = 0
             round_timestep_count = 0
 
             trajectories = generate_trajectories(
                 policy=self.expert_policy,
-                venv=collector,
+                env=collector,
                 callback=callback,
-                is_env_noisy=self.is_env_noisy,
                 num_timesteps=total_timestep_count,
             )
 
@@ -282,7 +202,12 @@ class SimpleDAggerTrainer(DAggerTrainer):
             data_loader = DataLoader(rb, batch_size=self.batch_size,
                                            shuffle=True, num_workers=4, pin_memory=True)
             
-            self.bc_trainer.set_demonstrations(data_loader)
+            self.set_demonstrations(data_loader)
 
-            self.extend_and_update(bc_train_kwargs)
-            round_num += 1
+            super().learn()
+
+            self.round_num += 1
+            return self.round_num
+
+
+        # callback.on_training_end()

@@ -1,17 +1,20 @@
 
 import numpy as np
+from typing import Dict
+
+import gymnasium as gym
 
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.vec_env import VecEnv
+from stable_baselines3.common.type_aliases import GymEnv
 from .eval import EvalStudentCallback
 
 from .trajectory_accumulator import TrajectoryAccumulator
     
 def generate_trajectories(
     policy: BasePolicy,
-    venv: VecEnv,
+    env: GymEnv,
     callback: EvalStudentCallback,
-    is_env_noisy: bool = False,
     num_timesteps: int = 0,
       ):
     """Generate trajectory dictionaries from a policy and an environment.
@@ -34,38 +37,57 @@ def generate_trajectories(
         may be collected to avoid biasing process towards short episodes; the user
         should truncate if required.
     """
+    print("generate trajectories")
     trajectories = []
-    
-    num_actions = venv.action_space.shape[0]
-    if is_env_noisy:
-        num_obs = venv.observation_space['observation'].shape[0]
+
+    obs = env.reset()
+    print("obs",type(obs))
+
+    if isinstance(obs, Dict):
+        print("yo")
+        state = obs['state']
+        obs = obs['observation']
     else:
-        num_obs = venv.observation_space.shape[0]
+        state = obs
+            
 
-    trajectories_accum = TrajectoryAccumulator(venv.num_envs, num_obs, num_actions)
+    trajectories_accum = TrajectoryAccumulator(env.num_envs)
 
-    obs = venv.reset()
-
-    active = np.ones(venv.num_envs, dtype=bool)
-    dones = np.zeros(venv.num_envs, dtype=bool)
+    active = np.ones(env.num_envs, dtype=bool)
+    dones = np.zeros(env.num_envs, dtype=bool)
 
     print("Dagger Generate Trajectories")
     while np.any(active):
-        acts, _ = policy.predict(obs,deterministic=True)
-        next_obs, rews, dones, _ = venv.step(acts)
 
-        callback.on_step(num_timesteps=num_timesteps)
+        acts, _ = policy.predict(state, deterministic=True)
+        next_obs, rews, dones, _ = env.step(acts)
+
+        #callback.on_step(num_timesteps=num_timesteps)
 
         dones &= active
 
+        # if isinstance(obs, Dict):
+        #     active_obs =  {"state": obs['state'][active], "observation":  obs['observation'][active]}
+        # else:
+        #     active_obs =  obs[active]
+
         new_trajs = trajectories_accum.add_steps_and_auto_finish(
+            state[active],
             obs[active],
             acts[active],
             rews[active],
             dones[active]
         )
 
-        obs = next_obs
+        if isinstance(next_obs, Dict):
+            state = next_obs['state']
+            obs = next_obs['observation']
+        else:
+            state = next_obs
+
+        # if isinstance(obs, Dict):
+        #     obs = obs['observation']
+           
 
         trajectories.extend(new_trajs)
 
