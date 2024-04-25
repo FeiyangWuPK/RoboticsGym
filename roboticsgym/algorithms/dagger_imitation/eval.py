@@ -1,10 +1,12 @@
 import os
 import warnings
 
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Callable
+from stable_baselines3.common import type_aliases
+
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 
 import numpy as np
-import torch
+
 import gymnasium as gym
 from torch.nn import functional as F
 
@@ -19,9 +21,7 @@ from stable_baselines3.common.vec_env import (
     is_vecenv_wrapped,
 )
 
-from .bc import BC
-
-class EvalStudentCallback():
+class EvalStudentCallback(EventCallback):
     """
     Evaluating an agent.
 
@@ -52,15 +52,23 @@ class EvalStudentCallback():
     def __init__(
         self,
         eval_env: Union[gym.Env, VecEnv],
-        best_model_save_path: Optional[str] = None,
-        log_path: Optional[str] = None,
-        eval_freq: int = 10000,
+        callback_on_new_best: Optional[BaseCallback] = None,
+        callback_after_eval: Optional[BaseCallback] = None,       
         n_eval_episodes: int = 5,
+        eval_freq: int = 10000,
+        log_path: Optional[str] = None,
+        best_model_save_path: Optional[str] = None,
         deterministic: bool = True,
         render: bool = False,
         verbose: int = 1,
+        warn: bool = True,
     ):
-        self.n_calls = 0
+        super().__init__(callback_after_eval, verbose=verbose)
+
+        self.callback_on_new_best = callback_on_new_best
+        if self.callback_on_new_best is not None:
+            # Give access to the parent
+            self.callback_on_new_best.parent = self
 
         self.n_eval_episodes = n_eval_episodes
         self.eval_freq = eval_freq
@@ -68,6 +76,7 @@ class EvalStudentCallback():
         self.last_mean_reward = -np.inf
         self.deterministic = deterministic
         self.render = render
+        self.warn = warn
 
         if not isinstance(eval_env, VecEnv):
             eval_env = DummyVecEnv([lambda: eval_env])
@@ -87,31 +96,54 @@ class EvalStudentCallback():
 
         self.verbose = verbose
 
-    def init_callback(self,model):
-        self.model = model
 
-    def _log_success_callback(
-        self, info, done
-    ) -> None:
+    def _init_callback(self) -> None:
+        # Does not work in some corner cases, where the wrapper is not the same
+        if not isinstance(self.training_env, type(self.eval_env)):
+            warnings.warn("Training and eval env are not of the same type" f"{self.training_env} != {self.eval_env}")
+
+        # Create folders if needed
+        if self.best_model_save_path is not None:
+            os.makedirs(self.best_model_save_path, exist_ok=True)
+        if self.log_path is not None:
+            os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+
+        # Init callback called on new best model
+        if self.callback_on_new_best is not None:
+            self.callback_on_new_best.init_callback(self.model)
+
+    def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
         """
         Callback passed to the  ``evaluate_policy`` function
         in order to log the success rate (when applicable),
         for instance when using HER.
-        """
 
-        if done:
+        :param locals_:
+        :param globals_:
+        """
+        info = locals_["info"]
+
+        if locals_["done"]:
             maybe_is_success = info.get("is_success")
             if maybe_is_success is not None:
                 self._is_success_buffer.append(maybe_is_success)
 
-    def _on_step(self,num_timesteps) -> bool:
+    def _on_step(self) -> bool:
         continue_training = True
 
         if (self.eval_freq > 0 and self.n_calls % self.eval_freq == 0): 
             # and self.model.num_timesteps > self.model.student_irl_begin_timesteps:
             # Sync training and eval env if there is VecNormalize
+            if self.model.get_vec_normalize_env() is not None:
+                try:
+                    sync_envs_normalization(self.training_env, self.eval_env)
+                except AttributeError as e:
+                    raise AssertionError(
+                        "Training and eval env are not wrapped the same way, "
+                        "see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
+                        "and warning above."
+                    ) from e
             
-
             # Reset success rate buffer
             self._is_success_buffer = []
 
@@ -122,16 +154,14 @@ class EvalStudentCallback():
                 render=self.render,
                 deterministic=self.deterministic,
                 return_episode_rewards=True,
+                warn=self.warn,
                 callback=self._log_success_callback,
             )
 
-            current_directory = os.getcwd()
-
-            print(f"Current working directory: {current_directory}")    
-            print(self.log_path)    
-
             if self.log_path is not None:
-                self.evaluations_timesteps.append(num_timesteps)
+                assert isinstance(episode_rewards, list)
+                assert isinstance(episode_lengths, list)
+                self.evaluations_timesteps.append(self.num_timesteps)
                 self.evaluations_results.append(episode_rewards)
                 self.evaluations_length.append(episode_lengths)
 
@@ -142,7 +172,7 @@ class EvalStudentCallback():
                     kwargs = dict(successes=self.evaluations_successes)
 
                 np.savez(
-                    "evals",
+                    self.log_path,
                     timesteps=self.evaluations_timesteps,
                     results=self.evaluations_results,
                     ep_lengths=self.evaluations_length,
@@ -156,42 +186,51 @@ class EvalStudentCallback():
             self.last_mean_reward = mean_reward
 
             if self.verbose >= 1:
-                print(
-                    f"Student Eval num_timesteps={num_timesteps}, "
-                    f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}"
-                )
+                print(f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
                 print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
-
+            # Add to current Logger
+            self.logger.record("eval/mean_reward", float(mean_reward))
+            self.logger.record("eval/mean_ep_length", mean_ep_length)
 
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
                 if self.verbose >= 1:
                     print(f"Success rate: {100 * success_rate:.2f}%")
+                self.logger.record("eval/success_rate", success_rate)
 
+            # Dump log so the evaluation results are printed with the correct timestep
+            self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+            self.logger.dump(self.num_timesteps)
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose >= 1:
                     print("New best mean reward!")
                 if self.best_model_save_path is not None:
-                    self.model.save(
-                        os.path.join(self.best_model_save_path, "best_model")
-                    )
-                self.best_mean_reward = mean_reward
+                    self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+                self.best_mean_reward = float(mean_reward)
+                # Trigger callback on new best model, if needed
+                if self.callback_on_new_best is not None:
+                    continue_training = self.callback_on_new_best.on_step()
 
+            # Trigger callback after every evaluation, if needed
+            if self.callback is not None:
+                continue_training = continue_training and self._on_event()
 
         return continue_training
 
-    def on_step(self,num_timesteps) -> bool:
-        self.n_calls +=1
+    def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+        """
+        Update the references to the local variables.
 
-        return self._on_step(num_timesteps)
+        :param locals_: the local variables during rollout collection
+        """
+        if self.callback:
+            self.callback.update_locals(locals_)
 
-
-
-
+ 
 
 def evaluate_dagger_student_policy(
-    model: BC,
+    model: "type_aliases.PolicyPredictor",
     env: Union[gym.Env, VecEnv],
     n_eval_episodes: int = 10,
     deterministic: bool = True,
@@ -199,6 +238,7 @@ def evaluate_dagger_student_policy(
     callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
     reward_threshold: Optional[float] = None,
     return_episode_rewards: bool = False,
+    warn: bool = True,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
     """
     Runs policy for ``n_eval_episodes`` episodes and returns average reward.
@@ -236,6 +276,8 @@ def evaluate_dagger_student_policy(
         (in number of steps).
     """
     is_monitor_wrapped = False
+    # Avoid circular import
+    from stable_baselines3.common.monitor import Monitor
 
     if not isinstance(env, VecEnv):
         env = DummyVecEnv([lambda: env])  # type: ignore[list-item, return-value]
@@ -243,6 +285,14 @@ def evaluate_dagger_student_policy(
     is_monitor_wrapped = (
         is_vecenv_wrapped(env, VecMonitor) or env.env_is_wrapped(Monitor)[0]
     )
+
+    if not is_monitor_wrapped and warn:
+        warnings.warn(
+            "Evaluation environment is not wrapped with a ``Monitor`` wrapper. "
+            "This may result in reporting modified episode lengths and rewards, if other wrappers happen to modify these. "
+            "Consider wrapping environment first with ``Monitor`` wrapper.",
+            UserWarning,
+        )
 
     n_envs = env.num_envs
     episode_rewards = []
@@ -263,8 +313,9 @@ def evaluate_dagger_student_policy(
 
     episode_starts = np.ones((env.num_envs,), dtype=bool)
     while (episode_counts < episode_count_targets).any():
-        actions, _ = model.predict(
+        actions, states = model.predict(
             observation=observations['observation'],
+            state=states,
             episode_start=episode_starts,
             deterministic=deterministic,
         )
@@ -278,9 +329,9 @@ def evaluate_dagger_student_policy(
                 done = dones[i]
                 info = infos[i]
                 episode_starts[i] = done
-
                 if callback is not None:
-                    callback(info, done)
+                    callback(locals(), globals())
+
 
                 if dones[i]:
                     if is_monitor_wrapped:
@@ -318,4 +369,6 @@ def evaluate_dagger_student_policy(
     if return_episode_rewards:
         return episode_rewards, episode_lengths
     return mean_reward, std_reward
+
+
 

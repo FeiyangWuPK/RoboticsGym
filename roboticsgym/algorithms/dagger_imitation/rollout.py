@@ -38,20 +38,16 @@ def generate_trajectories(
         may be collected to avoid biasing process towards short episodes; the user
         should truncate if required.
     """
-    print("generate trajectories")
     trajectories = []
 
     obs = env.reset()
-    print("obs",type(obs))
 
     if isinstance(obs, Dict):
-        print("yo")
         state = obs['state']
         obs = obs['observation']
     else:
         state = obs
             
-
     trajectories_accum = TrajectoryAccumulator(env.num_envs)
 
     active = np.ones(env.num_envs, dtype=bool)
@@ -59,11 +55,10 @@ def generate_trajectories(
 
     print("Dagger Generate Trajectories")
     callback.on_rollout_start()
+
     while np.any(active):
-
         acts, _ = policy.predict(state, deterministic=True)
-        next_obs, rews, dones, _ = env.step(acts)
-
+        next_obs, rews, dones, info = env.step(acts)
 
         callback.update_locals(locals())
         callback.on_step()

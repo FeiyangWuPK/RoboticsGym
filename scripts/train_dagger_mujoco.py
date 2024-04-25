@@ -12,7 +12,7 @@ from imitation.util import util
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 
-from roboticsgym.algorithms.dagger_imitation import BC, DAggerTrainer, EvalStudentCallback
+from roboticsgym.algorithms.dagger_imitation import DAggerTrainer, EvalStudentCallback
 
 
 from torch.utils.tensorboard import SummaryWriter
@@ -81,8 +81,8 @@ def train_dagger(env_name, n_envs, total_steps):
         is_env_noisy=True)
     
 
-    dagger_trainer.train(total_timesteps=total_steps)#,
-                        #  callback=student_eval_callback)
+    dagger_trainer.train(total_timesteps=total_steps,
+                          callback=student_eval_callback)
 
     # dagger_trainer.save_policy("models/dagger_save")
     # take_video_results(env_name, n_envs,dagger_trainer.policy)
