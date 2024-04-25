@@ -30,6 +30,9 @@ except ImportError:
 from gymnasium.envs.registration import register
 from roboticsgym.algorithms.sb3.l2t_rl import (
     L2TRL,
+    
+)
+from roboticsgym.algorithms.sb3.utilities import (
     evaluate_student_policy,
     evaluate_teacher_policy,
     EvalStudentCallback,
@@ -1340,7 +1343,7 @@ def train_rl_cassie_v6():
     config = {
         "teacher_policy_type": "L2TPolicy",
         "student_policy_type": "L2TPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 1e7,
         "env_id": "CassieMirror-v6",
         "buffer_size": int(1e6),
         "train_freq": 1,
@@ -1349,8 +1352,8 @@ def train_rl_cassie_v6():
         "verbose": 1,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": linear_schedule(3e-3),
-        "n_envs": 24,
+        "learning_rate": 3e-4,
+        "n_envs": 12,
         "batch_size": 256,
         "seed": 42,
         "teacher_gamma": 0.99,
@@ -1367,7 +1370,7 @@ def train_rl_cassie_v6():
         sync_tensorboard=True,
         save_code=False,
         reinit=True,
-        notes="Add motor velocity, new_translationalAcceleration[:],",
+        notes="0.2 chance student explore, longer training",
     )
     wandb.run.log_code(".")
 
