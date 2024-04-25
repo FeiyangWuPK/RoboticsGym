@@ -732,8 +732,9 @@ def run_hopper_second_stage(env_name="Hopper-v4"):
     # Finish wandb run
     run.finish()
 
+
 def halfcheetah_ablation():
-    env_name='HalfCheetah-v4'
+    env_name = "HalfCheetah-v4"
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
