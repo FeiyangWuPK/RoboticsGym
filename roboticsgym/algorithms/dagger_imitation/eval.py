@@ -48,7 +48,6 @@ class EvalStudentCallback(EventCallback):
     :param warn: Passed to ``evaluate_policy`` (warns if ``eval_env`` has not been
         wrapped with a Monitor wrapper)
     """
-
     def __init__(
         self,
         eval_env: Union[gym.Env, VecEnv],
@@ -95,7 +94,6 @@ class EvalStudentCallback(EventCallback):
         self.evaluations_successes = []
 
         self.verbose = verbose
-
 
     def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same

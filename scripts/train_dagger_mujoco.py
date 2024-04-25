@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 import roboticsgym.envs
 
 
-def train_dagger(env_name, n_envs, total_steps):
+def train_dagger(env_name, n_envs, total_steps,eval_freq):
    
     env = util.make_vec_env(
         env_name,
@@ -32,14 +32,13 @@ def train_dagger(env_name, n_envs, total_steps):
 
     train_env = make_vec_env(
         "NoisyMujoco-v4",
-        n_envs=4,
+        n_envs=n_envs,
         vec_env_cls=SubprocVecEnv,
         env_kwargs={
             "task": env_name,
             "domain_randomization_scale": 0.1,
         },
     )
-
 
     student_eval_env = make_vec_env(
         "NoisyMujoco-v4",
@@ -62,7 +61,7 @@ def train_dagger(env_name, n_envs, total_steps):
         student_eval_env,
         best_model_save_path=f"logs/dagger/student/",
         log_path=f"logs/dagger/student/",
-        eval_freq=1000,
+        eval_freq=eval_freq,
         n_eval_episodes=5,
         deterministic=True,
         render=False,
@@ -71,8 +70,6 @@ def train_dagger(env_name, n_envs, total_steps):
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-
     dagger_trainer = DAggerTrainer(
         env=train_env,
         rng=np.random.default_rng(),
@@ -80,11 +77,9 @@ def train_dagger(env_name, n_envs, total_steps):
         expert_policy=expert,
         is_env_noisy=True)
     
-
     dagger_trainer.train(total_timesteps=total_steps,
                           callback=student_eval_callback)
 
-    # dagger_trainer.save_policy("models/dagger_save")
     # take_video_results(env_name, n_envs,dagger_trainer.policy)
 
 
@@ -121,4 +116,4 @@ def take_video_results(env_name, n_envs, policy):
 
 
 if __name__ == "__main__":
-    train_dagger("HalfCheetah-v4", 4, 10000)
+    train_dagger("HalfCheetah-v4", 4, 10000,1000)

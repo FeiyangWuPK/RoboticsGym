@@ -209,6 +209,6 @@ class DAggerTrainer(BC):
             super().learn()
 
             self.round_num += 1
-            return self.round_num
+            print("-----------")
         
         callback.on_training_end()

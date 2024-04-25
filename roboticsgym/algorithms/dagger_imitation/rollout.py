@@ -53,7 +53,7 @@ def generate_trajectories(
     active = np.ones(env.num_envs, dtype=bool)
     dones = np.zeros(env.num_envs, dtype=bool)
 
-    print("Dagger Generate Trajectories")
+    print("Generate Trajectories")
     callback.on_rollout_start()
 
     while np.any(active):
@@ -77,11 +77,7 @@ def generate_trajectories(
             state = next_obs['state']
             obs = next_obs['observation']
         else:
-            state = next_obs
-
-        # if isinstance(obs, Dict):
-        #     obs = obs['observation']
-           
+            state = next_obs         
 
         trajectories.extend(new_trajs)
 

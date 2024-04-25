@@ -116,8 +116,8 @@ class BC(BaseAlgorithm):
         ent_weight: float = 1e-3,
         l2_weight: float = 0.0,
     ):
-        print("start init")
-        print("batch_size",batch_size)
+        print("BC__init__()")
+
         self._batch_size = batch_size
         self.n_epochs = n_epochs
       
@@ -170,10 +170,9 @@ class BC(BaseAlgorithm):
             support_multi_env=True,
         )
 
-        print("INIT END")
-        print(self.observation_space)
-        print(f'Using device: {self.device}')
-        print("batch",  self.batch_size)
+        print("device", self.device)
+        print("batch", self.batch_size)
+
 
 
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
@@ -229,7 +228,7 @@ class BC(BaseAlgorithm):
         # )
 
 
-        print("device", self.device)
+        
         print_sample_count = True
         for epoch in range(self.n_epochs):
             print("Epoch ", epoch)
