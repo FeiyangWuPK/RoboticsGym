@@ -6,8 +6,6 @@ expert's policy; over time, they shift to be drawn more and more from the imitat
 policy.
 """
 
-import pathlib
-
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Mapping
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, RolloutReturn, Schedule, TrainFreq, TrainFrequencyUnit
 
@@ -115,7 +113,6 @@ class DAggerTrainer(BC):
 
         return collector
     
-
     def train(
         self,
         *,

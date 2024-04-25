@@ -1,6 +1,4 @@
-import numpy as np
 import abc
-
 
 class TrajectoryAccumulator(abc.ABC):
     """
@@ -8,9 +6,7 @@ class TrajectoryAccumulator(abc.ABC):
     """
     def __init__(self, num_envs):
         self.num_envs = num_envs
-        
         self.partial_trajectories = {env_id: [] for env_id in range(self.num_envs)}
-
 
     def add_step(self, env_id, step_dict):
         required_keys = {'states', 'obs', 'acts', 'rews', 'dones'}
@@ -20,20 +16,16 @@ class TrajectoryAccumulator(abc.ABC):
 
         self.partial_trajectories[env_id].append(step_dict)
 
-
     def get_partial_trajectories(self):
         return self.partial_trajectories
         
-
     def finish_trajectory(self, env_id):
         part_dicts = self.partial_trajectories[env_id]
         del self.partial_trajectories[env_id]
 
         return part_dicts
     
-
     def add_steps_and_auto_finish(self, states, obs, acts, rews, dones):
-
         trajectories = []
         for env_idx in range(self.num_envs):
             assert env_idx in self.partial_trajectories.keys()

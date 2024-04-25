@@ -18,7 +18,6 @@ class InteractiveTrajectoryCollector(gym.Wrapper):
                  beta: float,
                  rng: np.random.Generator,
                  ):
-        # Call the parent constructor, so we can access self.env later
         super().__init__(env)        
         assert 0 <= beta <= 1
         self.beta = beta
