@@ -194,6 +194,7 @@ class DAggerTrainer(BC):
                 combined_trajectories.extend(traj)
                 round_timestep_count += len(traj)
                 total_timestep_count += len(traj)
+                self.num_timesteps = total_timestep_count
 
             round_episode_count += len(trajectories)
 

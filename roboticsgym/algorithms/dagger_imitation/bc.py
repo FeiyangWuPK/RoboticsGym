@@ -121,13 +121,10 @@ class BC(BaseAlgorithm):
         self._batch_size = batch_size
         self.n_epochs = n_epochs
       
-        print("yop")
-
         self.action_space = env.action_space
         self.observation_space = env.observation_space
 
         if isinstance(env.observation_space, gym.spaces.Dict):
-            print("dedans")
             self.observation_space = self.observation_space['observation']
 
         print("self.observation_space",  type(self.observation_space))
@@ -262,11 +259,16 @@ class BC(BaseAlgorithm):
                 #     print("batch:", batch_count, "loss:", loss.item())
 
 
-    def predict(self,observation: np.ndarray,
-                episode_start:np.ndarray = None,
-                deterministic: bool = False):
+    def predict(self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
 
-        return self.policy.predict(observation=observation,episode_start=episode_start, deterministic=deterministic)
+        return self.policy.predict(observation, state, episode_start, deterministic)
+    
+        
 
     @property
     def policy(self) -> BasePolicy:
