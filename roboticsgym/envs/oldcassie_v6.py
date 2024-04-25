@@ -559,6 +559,8 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             )
             obs = np.concatenate(
                 [
+                    new_orientation[:],
+                    state.motor.position[:],
                     obs,
                     state.motor.velocity[:],
                     new_translationalAcceleration[:],
@@ -674,6 +676,8 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             )
             obs = np.concatenate(
                 [
+                    new_orientation[:],
+                    motor_position,
                     obs,
                     motor_velocity,
                     new_translationalAcceleration[:],
