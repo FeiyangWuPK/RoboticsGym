@@ -7,14 +7,15 @@ import gymnasium as gym
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.type_aliases import GymEnv
-from .eval import EvalStudentCallback
+from stable_baselines3.common.callbacks import BaseCallback
+
 
 from .trajectory_accumulator import TrajectoryAccumulator
     
 def generate_trajectories(
     policy: BasePolicy,
     env: GymEnv,
-    callback: EvalStudentCallback,
+    callback: BaseCallback,
     num_timesteps: int = 0,
       ):
     """Generate trajectory dictionaries from a policy and an environment.
@@ -57,19 +58,17 @@ def generate_trajectories(
     dones = np.zeros(env.num_envs, dtype=bool)
 
     print("Dagger Generate Trajectories")
+    callback.on_rollout_start()
     while np.any(active):
 
         acts, _ = policy.predict(state, deterministic=True)
         next_obs, rews, dones, _ = env.step(acts)
 
-        #callback.on_step(num_timesteps=num_timesteps)
+
+        callback.update_locals(locals())
+        callback.on_step()
 
         dones &= active
-
-        # if isinstance(obs, Dict):
-        #     active_obs =  {"state": obs['state'][active], "observation":  obs['observation'][active]}
-        # else:
-        #     active_obs =  obs[active]
 
         new_trajs = trajectories_accum.add_steps_and_auto_finish(
             state[active],
@@ -93,4 +92,5 @@ def generate_trajectories(
 
         active &= ~dones
 
+    callback.on_rollout_end()
     return trajectories

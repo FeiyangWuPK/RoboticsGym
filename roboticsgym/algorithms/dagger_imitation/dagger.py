@@ -117,7 +117,11 @@ class DAggerTrainer(BC):
         self,
         *,
         total_timesteps: int,
-        callback: EvalStudentCallback,
+        callback: MaybeCallback = None,
+        log_interval: int = 4,
+        tb_log_name: str = "run",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
         rollout_round_min_episodes: int = 3,
         rollout_round_min_timesteps: int = 500,
         bc_train_kwargs: dict = None,
@@ -155,17 +159,21 @@ class DAggerTrainer(BC):
                 `self.venv` by default. If neither of the `n_epochs` and `n_batches`
                 keys are provided, then `n_epochs` is set to `self.DEFAULT_N_EPOCHS`.
         """
+
+        total_timesteps, callback = self._setup_learn(
+            total_timesteps,
+            callback,
+            reset_num_timesteps,
+            tb_log_name,
+            progress_bar,
+        )
+
         total_timestep_count = 0
         self.round_num = 0
 
         combined_trajectories = []
-        self.env.reset()
 
-        # callback.init_callback(self.bc_trainer)
-
-        # callback.on_training_start(locals(), globals())
-
-        assert self.env is not None, "You must set the environment before calling learn()"
+        callback.on_training_start(locals(), globals())
 
         while total_timestep_count < total_timesteps:
             print("round: ", self.round_num)
@@ -189,10 +197,6 @@ class DAggerTrainer(BC):
 
             round_episode_count += len(trajectories)
 
-            # self.logger.record("dagger/total_timesteps_count", total_timestep_count)
-            # self.logger.record("dagger/round_num", round_num)
-            # self.logger.record("dagger/round_episode_count", round_episode_count)
-            # self.logger.record("dagger/round_timestep_count", round_timestep_count)
 
             rb = ReplayBuffer(combined_trajectories)
 
@@ -205,6 +209,5 @@ class DAggerTrainer(BC):
 
             self.round_num += 1
             return self.round_num
-
-
-        # callback.on_training_end()
+        
+        callback.on_training_end()

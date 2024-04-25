@@ -81,8 +81,8 @@ def train_dagger(env_name, n_envs, total_steps):
         is_env_noisy=True)
     
 
-    dagger_trainer.train(total_timesteps=total_steps,
-                         callback=student_eval_callback)
+    dagger_trainer.train(total_timesteps=total_steps)#,
+                        #  callback=student_eval_callback)
 
     # dagger_trainer.save_policy("models/dagger_save")
     # take_video_results(env_name, n_envs,dagger_trainer.policy)
