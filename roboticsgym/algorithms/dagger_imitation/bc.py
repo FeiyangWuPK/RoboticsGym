@@ -174,7 +174,6 @@ class BC(BaseAlgorithm):
         print("batch", self.batch_size)
 
 
-
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
             self.demonstrations =demonstrations
 
