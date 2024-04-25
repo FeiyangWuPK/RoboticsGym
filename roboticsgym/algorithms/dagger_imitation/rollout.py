@@ -13,7 +13,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from .trajectory_accumulator import TrajectoryAccumulator
     
 def generate_trajectories(
-    policy: BasePolicy,
+    expert_policy: BasePolicy,
     env: GymEnv,
     callback: BaseCallback,
     num_timesteps: int = 0,
@@ -57,7 +57,7 @@ def generate_trajectories(
     callback.on_rollout_start()
 
     while np.any(active):
-        acts, _ = policy.predict(state, deterministic=True)
+        acts, _ = expert_policy.predict(state, deterministic=True)
         next_obs, rews, dones, info = env.step(acts)
 
         callback.update_locals(locals())

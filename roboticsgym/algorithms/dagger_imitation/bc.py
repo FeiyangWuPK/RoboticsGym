@@ -175,7 +175,7 @@ class BC(BaseAlgorithm):
 
 
     def set_demonstrations(self, demonstrations: DataLoader) -> None:
-            self.demonstrations =demonstrations
+            self.demonstrations = demonstrations
 
     def save(self,path):
         self.policy.save("save_bc")
@@ -234,8 +234,7 @@ class BC(BaseAlgorithm):
             print("Sample_so_far", self.sample_so_far)
             for i, batch in enumerate(tqdm(self.demonstrations, desc='Training '), 0):
 
-                states, obs, acts = batch
-                states = states.to(self.device)
+                obs, acts = batch
                 obs  = obs.to(self.device)
                 acts = acts.to(self.device)
 
@@ -245,7 +244,7 @@ class BC(BaseAlgorithm):
                     print_sample_count = False
 
                 
-                training_metrics = self.loss_calculator(self.policy, states, acts)
+                training_metrics = self.loss_calculator(self.policy, obs, acts)
 
                 loss = training_metrics.loss
 

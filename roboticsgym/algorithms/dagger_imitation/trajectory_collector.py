@@ -56,11 +56,11 @@ class InteractiveTrajectoryCollector(gym.Wrapper):
         actual_acts = np.array(action)
 
         if isinstance(self._last_obs, Dict):
-            self._last_obs = self._last_obs['observation']
+            obs = self._last_obs['observation']
 
         mask = self.rng.uniform(0, 1, size=(self.num_envs,)) > self.beta
         if np.sum(mask) != 0:
-            actual_acts[mask],_ = self.student_policy.predict(self._last_obs[mask])
+            actual_acts[mask],_ = self.student_policy.predict(obs[mask])
 
         next_obs, reward, done, info = self.env.step(actual_acts)
 

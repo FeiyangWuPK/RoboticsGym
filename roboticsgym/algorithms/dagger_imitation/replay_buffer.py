@@ -11,15 +11,13 @@ class ReplayBuffer(Dataset):
         return len(self.data)
 
     def add_samples(self, samples_list):
-        print(samples_list[0])
         self.data.append(samples_list)
 
     def __getitem__(self, idx):
-        states = self.data[idx]['states']
         obs = self.data[idx]['obs']
         acts = self.data[idx]['acts']
 
-        return torch.tensor(states), torch.tensor(obs), torch.tensor(acts)
+        return torch.tensor(obs), torch.tensor(acts)
     
 
 

@@ -52,7 +52,6 @@ class DAggerTrainer(BC):
 
         expert_policy: policies.BasePolicy,
         beta_schedule: BetaSchedule = None,
-        is_env_noisy: bool = False,
     ):
         """Builds DAggerTrainer.
 
@@ -85,7 +84,6 @@ class DAggerTrainer(BC):
         self.beta_schedule = beta_schedule
         self.round_num = 0
         self._last_loaded_round = -1
-        self.is_env_noisy = is_env_noisy
 
         self.expert_policy = expert_policy
         # if expert_policy.observation_space != self.venv.observation_space:
@@ -184,7 +182,7 @@ class DAggerTrainer(BC):
             round_timestep_count = 0
 
             trajectories = generate_trajectories(
-                policy=self.expert_policy,
+                expert_policy=self.expert_policy,
                 env=collector,
                 callback=callback,
                 num_timesteps=total_timestep_count,
