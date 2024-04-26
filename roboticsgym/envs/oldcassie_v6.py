@@ -557,13 +557,17 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                     ]
                 )
             )
-            # observation = np.concatenate(
-            #     [
-            #         randomized_useful_obs,
-            #         ref_pos[self.first_phase_pos_index],
-            #         ref_vel[self.first_phase_vel_index],
-            #     ]
-            # )
+            obs = np.concatenate(
+                [
+                    new_orientation[:],
+                    state.motor.position[:],
+                    obs,
+                    state.motor.velocity[:],
+                    new_translationalAcceleration[:],
+                    ref_pos[self.first_phase_pos_index],
+                    ref_vel[self.first_phase_vel_index],
+                ]
+            )
             state = np.concatenate(
                 [
                     useful_state,
@@ -669,6 +673,17 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
                         joint_velocity,
                     ]
                 )
+            )
+            obs = np.concatenate(
+                [
+                    new_orientation[:],
+                    motor_position,
+                    obs,
+                    motor_velocity,
+                    new_translationalAcceleration[:],
+                    ref_pos[self.second_phase_pos_index],
+                    ref_vel[self.second_phase_vel_index],
+                ]
             )
             state = np.concatenate(
                 [

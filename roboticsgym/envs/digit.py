@@ -1,13 +1,23 @@
 import os
 import numpy as np
-from gymnasium.envs.mujoco import MujocoEnv
+from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 from gymnasium import utils
 from gymnasium.spaces import Box
 import mujoco
 from mujoco._functions import mj_rnePostConstraint
 from mujoco._functions import mj_step
 
-from reference_trajectories.loadDigit import DigitTrajectory
+from roboticsgym.envs.reference_trajectories.loadDigit import DigitTrajectory
+
+from roboticsgym.utils.transform3d import (
+    euler2quat,
+    inverse_quaternion,
+    quaternion_product,
+    quaternion2euler,
+    rotate_by_quaternion,
+    quat2yaw,
+    euler2mat,
+)
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
@@ -30,7 +40,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 400,
+        "render_fps": 200,
     }
 
     def __init__(
@@ -50,6 +60,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
         self.timestamp = 0
+        self.frame_skip = 10
 
         self._reset_noise_scale = reset_noise_scale
 
@@ -57,36 +68,32 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             exclude_current_positions_from_observation
         )
 
-        if exclude_current_positions_from_observation:
-            observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(78,), dtype=np.float64
-            )
-        else:
-            observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(80,), dtype=np.float64
-            )
+        observation_space = Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(109,),
+            dtype=np.float64,
+        )
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/xml/digit-v3.xml",
-            5,
+            os.getcwd() + "/roboticsgym/envs/xml/digit_v3.xml",
+            self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
         # overriding action space
-        self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
+        self.action_space = Box(low=-1.0, high=1.0, shape=(20,), dtype=np.float32)  # type: ignore
         # print(self.action_space.shape)
         self.ref_trajectory = DigitTrajectory(
-            "reference_trajectories/digit_state_downsample.csv"
+            os.getcwd()
+            + "/roboticsgym/envs/"
+            + "reference_trajectories/digit_state_20240422.csv"
         )
 
-        initial_qpos, initial_qvel = self.ref_trajectory.state(0)
-
-        self.init_qpos = initial_qpos
-        self.init_qvel = initial_qvel
-        self.ref_qpos = initial_qpos
-        self.ref_qvel = initial_qvel
+        self.init_qpos, self.init_qvel = self.ref_trajectory.state(0)
+        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(0)
 
         # Index from README. The toes are actuated by motor A and B.
         self.p_index = [
@@ -133,6 +140,54 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             52,
             53,
         ]
+        self.kp = np.array(
+            [
+                100,
+                100,
+                88,
+                96,
+                50,
+                50,
+                50,
+                50,
+                50,
+                50,
+                100,
+                100,
+                88,
+                96,
+                50,
+                50,
+                50,
+                50,
+                50,
+                50,
+            ]
+        )
+        self.kd = np.array(
+            [
+                10.0,
+                10.0,
+                8.0,
+                9.6,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                10.0,
+                10.0,
+                8.0,
+                9.6,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+            ]
+        )
 
         self.reset_model()
 
@@ -160,10 +215,11 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         return terminated
 
     def _get_obs(self):
-        position = self.data.qpos.flat.copy()[self.p_index]
-        velocity = self.data.qvel.flat.copy()[self.v_index]
+        qpos = self.data.qpos.flat.copy()
+        qvel = self.data.qvel.flat.copy()
 
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp + 1)
+        position = qpos[self.p_index]
+        velocity = qvel[self.v_index]
 
         com_inertia = self.data.cinert.flat.copy()
         com_velocity = self.data.cvel.flat.copy()
@@ -171,39 +227,57 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         actuator_forces = self.data.qfrc_actuator.flat.copy()
         external_contact_forces = self.data.cfrc_ext.flat.copy()
 
-        if self._exclude_current_positions_from_observation:
-            position = position[2:]
-
+        self.root_quat = qpos[3:7]
+        roll, pitch, yaw = quaternion2euler(self.root_quat)
+        base_rot = euler2mat(0, 0, yaw, "sxyz")
+        self.root_lin_vel = np.transpose(base_rot).dot(qvel[0:3])
+        self.root_ang_vel = np.transpose(base_rot).dot(qvel[3:6])
+        eular_angles = np.array([roll, pitch, yaw])
         return np.concatenate(
             (
+                self.root_lin_vel,
+                self.root_ang_vel,
+                eular_angles,
+                qpos[:7],
                 position,
                 velocity,
-                ref_qpos[self.p_index],
-                ref_qvel[self.v_index],
+                self.ref_qpos[:7],
+                self.ref_qvel[:6],
+                self.ref_qpos[self.p_index],
+                self.ref_qvel[self.v_index],
             )
         )
 
     def _step_mujoco_simulation(self, ctrl, n_frames):
-        # Set the control target, this userdata is used by PD control callback.
-        self.data.userdata[:] = ctrl
+        # mj_step(self.model, self.data, nstep=n_frames)
+        for _ in range(n_frames):
+            target_position = ctrl
+            target_velocity = np.zeros(20)
+            current_position = self.data.qpos[self.p_index]
+            current_velocity = self.data.qvel[self.v_index]
 
-        mj_step(self.model, self.data, nstep=n_frames)
+            torque = self.kp * (target_position - current_position) + self.kd * (
+                target_velocity - current_velocity
+            )
+            self.data.ctrl[:] = torque
+
+            mj_step(self.model, self.data)
 
         # As of MuJoCo 2.0, force-related quantities like cacc are not computed
         # unless there's a force sensor in the model.
         # See https://github.com/openai/gym/issues/1541
-        mj_rnePostConstraint(self.model, self.data)
+        # mj_rnePostConstraint(self.model, self.data)
 
     def step(self, action):
-        ref_qpos, ref_qvel = self.ref_trajectory.state(self.timestamp + 1)
-        self.ref_qpos = ref_qpos
-        self.ref_qvel = ref_qvel
-        self.timestamp += 1
+        # 5 because recording is 1000hz and simulation is (2000/10)=200hz
+        self.timestamp += 5
+
+        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
         xy_position_before = mass_center(self.model, self.data)
         # print(action)
-        q_pos_modified = action + ref_qpos[self.p_index]
-        self.frame_skip = 5
+        q_pos_modified = action + self.ref_qpos[self.p_index]
+
         self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
 
         # rod_index = [10,11,12,13, 19,20,21,22, 24,25,26,27,
@@ -214,6 +288,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         xy_velocity = (xy_position_after - xy_position_before) / self.dt
         x_velocity, y_velocity = xy_velocity
 
+        qpos = self.data.qpos.flat.copy()
+        qvel = self.data.qvel.flat.copy()
+
         ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
         forward_reward = self._forward_reward_weight * x_velocity
@@ -221,20 +298,21 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         tracking_reward = (
             0.5
             * np.exp(
-                -np.linalg.norm(
-                    ref_qpos[self.p_index] - self.data.qpos[self.p_index], ord=2
-                )
+                -np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index], ord=2)
             )
             + 0.3
             * np.exp(
-                -np.linalg.norm(
-                    ref_qvel[self.v_index] - self.data.qvel[self.v_index], ord=2
-                )
+                -np.linalg.norm(self.ref_qvel[self.v_index] - qvel[self.v_index], ord=2)
             )
-            + 0.2 * np.exp(-np.linalg.norm(ref_qpos[:3] - self.data.qpos[:3], ord=2))
+            + 0.2 * np.exp(-np.linalg.norm(self.ref_qpos[:3] - qpos[:3], ord=2))
         )
 
-        reward = forward_reward + healthy_reward + tracking_reward - ctrl_cost
+        reward = (
+            0.1 * forward_reward
+            + 0.1 * healthy_reward
+            + tracking_reward
+            - 0.1 * ctrl_cost
+        )
         observation = self._get_obs()
         terminated = self.terminated
         info = {
@@ -264,118 +342,15 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.timestamp = 0
         observation = self._get_obs()
 
-        self.data.userdata = np.zeros(20)  # Use userdata as target position.
+        # self.data.userdata = np.zeros(20)  # Use userdata as target position.
         # Define a callback that modify the ctrl before mj_step.
-
-        mujoco.set_mjcb_control(None)
-        mujoco.set_mjcb_control(lambda m, d: PD_control_CB(m, d))
 
         return observation
 
-    def viewer_setup(self):
-        assert self.viewer is not None
-        for key, value in DEFAULT_CAMERA_CONFIG.items():
-            if isinstance(value, np.ndarray):
-                getattr(self.viewer.cam, key)[:] = value
-            else:
-                setattr(self.viewer.cam, key, value)
-
-
-def PD_control_CB(model, data):
-    kp = np.array(
-        [
-            100,
-            100,
-            88,
-            96,
-            50,
-            50,
-            50,
-            50,
-            50,
-            50,
-            100,
-            100,
-            88,
-            96,
-            50,
-            50,
-            50,
-            50,
-            50,
-            50,
-        ]
-    )
-    kd = np.array(
-        [
-            10.0,
-            10.0,
-            8.0,
-            9.6,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-            10.0,
-            10.0,
-            8.0,
-            9.6,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-        ]
-    )
-    p_index = [
-        7,
-        8,
-        9,
-        14,
-        18,
-        23,
-        30,
-        31,
-        32,
-        33,
-        34,
-        35,
-        36,
-        41,
-        45,
-        50,
-        57,
-        58,
-        59,
-        60,
-    ]
-    v_index = [
-        6,
-        7,
-        8,
-        12,
-        16,
-        20,
-        26,
-        27,
-        28,
-        29,
-        30,
-        31,
-        32,
-        36,
-        40,
-        44,
-        50,
-        51,
-        52,
-        53,
-    ]
-    p = data.qpos[p_index]
-    v = data.qvel[v_index]
-    p_desired = data.userdata[:]
-    v_desired = np.zeros(20)
-    data.ctrl[:] = kp * (p_desired - p) + kd * (v_desired - v)
+    # def viewer_setup(self):
+    #     assert self.viewer is not None
+    #     for key, value in DEFAULT_CAMERA_CONFIG.items():
+    #         if isinstance(value, np.ndarray):
+    #             getattr(self.viewer.cam, key)[:] = value
+    #         else:
+    #             setattr(self.viewer.cam, key, value)

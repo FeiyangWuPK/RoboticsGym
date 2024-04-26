@@ -1,0 +1,27 @@
+env:
+  name: Digit-v1
+  n_envs: 32
+  seed: 42
+
+training:
+  total_timesteps: 500000
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  batch_size: 256
+  learning_starts: 10000
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"
+  model_save_path: "sac_ant_model"
+  verbose: 0
+
+wandb:
+  project: "CoRL2024 L2T"
+  run_name: "SAC_Digit"
+  group: "Digit"
+  entity: "your_username"
+  sync_tensorboard: True
+
+hydra:
+  job:
+    chdir: False

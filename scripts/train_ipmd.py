@@ -278,7 +278,7 @@ def visualize_irl_agent_traj(model_path: str):
         env_kwargs={
             "render": True,
             "visual": True,
-            "record_for_reward_inference": False,
+            "visual_record": True,
             "render_mode": "human",
         },
     )

@@ -1,5 +1,22 @@
+# Robotics Gym
+Gym-like training environments for LiDAR humanoid robots Cassie and Digit + training algorithms
 
-# Cassie
+## Algorithms
+### Inverse Policy Mirror Descent (IPMD)
+An Inverse Reinforcement Learning (IRL) method for solving IRL problems. 
+
+### Learn to Teach (L2T)
+Training framework similar to DAGGER and Teacher-Student learning, but training both agents at the same time. 
+A more efficient method for Domain Randomization.
+
+### DAGGER 
+Implementation of DAGGER
+
+### Teacher student training
+Implementation of Teacher-student learning aka privileged learning.
+
+## Description of the robots
+#### Cassie
 
 The Cassie joint definition from cassie.xml.
 
@@ -69,7 +86,7 @@ qvel 32: env.model.jnt_dofadr, env.init_qvel.size
 
 motor/actuators: 10
 
-# Digit
+#### Digit
 
 The Digit joint definition from digit.xml.
 mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_BODY, joint_id)
@@ -156,3 +173,4 @@ qvel 54: env.model.jnt_dofadr, env.init_qvel.size
 [53] right-elbow
 
 motor/actuators: 20
+
