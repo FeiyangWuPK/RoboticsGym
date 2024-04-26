@@ -30,36 +30,15 @@ except ImportError:
 from gymnasium.envs.registration import register
 from roboticsgym.algorithms.sb3.l2t_rl import (
     L2TRL,
-    
 )
 from roboticsgym.algorithms.sb3.utilities import (
     evaluate_student_policy,
     evaluate_teacher_policy,
     EvalStudentCallback,
     EvalTeacherCallback,
+    linear_schedule,
 )
 from roboticsgym.algorithms.sb3.newAlgo_student_only import HIPSTUDENTONLY
-
-
-def linear_schedule(initial_value: float) -> Callable[[float], float]:
-    """
-    Linear learning rate schedule.
-
-    :param initial_value: Initial learning rate.
-    :return: schedule that computes
-      current learning rate depending on remaining progress
-    """
-
-    def func(progress_remaining: float) -> float:
-        """
-        Progress will decrease from 1 (beginning) to 0.
-
-        :param progress_remaining:
-        :return: current learning rate
-        """
-        return progress_remaining * initial_value
-
-    return func
 
 
 def train_cassie_v4():
@@ -1295,44 +1274,32 @@ def run_mujoco_second_stage(env_name):
 
 def visualize_best_student():
     config = {
-        "policy_type": "MlpPolicy",
-        "total_timesteps": 5e6,
-        "env_id": "CassieMirror-v1",
-        "buffer_size": 1000000,
-        "train_freq": 3,
-        "gradient_steps": 3,
-        "progress_bar": True,
-        "verbose": 1,
-        "ent_coef": "auto",
-        "student_ent_coef": "auto",
-        "learning_rate": linear_schedule(5e-3),
-        "n_envs": 24,
-        "batch_size": 300,
-        "seed": 1,
-        "expert_replaybuffersize": 600,
-        "expert_replaybuffer": "expert_demo/SAC/10traj_morestable",
+        "env_id": "CassieMirror-v6",
     }
 
-    # Create log dir
-    train_env = make_vec_env(
-        config["env_id"], n_envs=config["n_envs"], vec_env_cls=SubprocVecEnv
-    )
     # Separate evaluation env
     eval_env = make_vec_env(
         config["env_id"],
         n_envs=1,
         vec_env_cls=SubprocVecEnv,
-        env_kwargs={"render": True},
+        env_kwargs={
+            "render": True,
+            "visual": True,
+            "record_for_reward_inference": False,
+            "render_mode": "human",
+        },
     )
 
     # Init model
-    irl_model = HIP.load("logs/2023-07-07-11-16-17/student/best_model.zip")
-    irl_model.set_parameters("logs/2023-07-08-21-42-09/student/best_model.zip")
+    model = L2TRL.load(
+        "logs/CoRL2024 Guided Learning/Cassie Imitation Learning L2T-2024-04-24-23-15-07/student/best_model.zip"
+    )
+    model.set_parameters(
+        "logs/CoRL2024 Guided Learning/Cassie Imitation Learning L2T-2024-04-24-23-15-07/student/best_model.zip"
+    )
 
     # Evaluation
-    mean_student_reward, _ = evaluate_student_policy(
-        irl_model, eval_env, n_eval_episodes=10
-    )
+    mean_student_reward, _ = evaluate_student_policy(model, eval_env, n_eval_episodes=3)
 
     # Finish wandb run
 

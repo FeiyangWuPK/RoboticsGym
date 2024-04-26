@@ -14,6 +14,7 @@ from stable_baselines3.common.vec_env import (
     sync_envs_normalization,
     is_vecenv_wrapped,
 )
+import wandb
 
 
 class EvalStudentCallback(EventCallback):
@@ -722,3 +723,62 @@ def evaluate_teacher_policy(
     if return_episode_rewards:
         return episode_rewards, episode_lengths
     return mean_reward, std_reward  # type: ignore
+
+
+def linear_schedule(initial_value: float) -> Callable[[float], float]:
+    """
+    Linear learning rate schedule.
+
+    :param initial_value: Initial learning rate.
+    :return: schedule that computes
+      current learning rate depending on remaining progress
+    """
+
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0.
+
+        :param progress_remaining:
+        :return: current learning rate
+        """
+        return progress_remaining * initial_value
+
+    return func
+
+
+class VideoEvalCallback(BaseCallback):
+
+    def __init__(
+        self,
+        eval_every: int = 100000,
+        verbose: int = 0,
+        eval_env: Optional[VecEnv] = None,
+    ):
+        super(VideoEvalCallback, self).__init__(verbose=verbose)
+
+        self.eval_every = eval_every
+        self.eval_env = eval_env
+        if self.eval_env is None:
+            # error
+            raise ValueError("eval_env must be passed to the callback")
+
+    def _on_step(self) -> bool:
+
+        if self.num_timesteps % self.eval_every == 0:
+            self.record_video()
+
+        return True
+
+    def record_video(self) -> None:
+
+        video = []
+
+        obs = self.eval_env.reset()
+        for i in range(1000):
+            action = self.model.predict(obs, deterministic=True)[0]
+            obs, _, _, _ = self.eval_env.step(action)
+            pixels = self.eval_env.render().transpose(2, 0, 1)
+            video.append(pixels)
+
+        video = np.stack(video)
+        wandb.log({"results/video": wandb.Video(video, fps=100, format="mp4")})
