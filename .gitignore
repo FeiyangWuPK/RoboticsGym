@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 # *.so
 
+*videos
+*tensorboard
+
 # Pickle files
 *.pkl
 
