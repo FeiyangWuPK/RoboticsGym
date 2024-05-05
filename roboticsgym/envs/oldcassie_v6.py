@@ -549,23 +549,19 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             )
 
             # make useful_obs to be only include joint position and velocity
-            obs = self.apply_randomization(
-                np.concatenate(
-                    [
-                        state.joint.position[:],
-                        state.joint.velocity[:],
-                    ]
-                )
-            )
             obs = np.concatenate(
                 [
-                    obs,
+                    state.joint.position[:],
+                    state.joint.velocity[:],
+                    new_orientation[:],
+                    state.motor.position[:],
                     state.motor.velocity[:],
-                    new_translationalAcceleration[:],
                     ref_pos[self.first_phase_pos_index],
                     ref_vel[self.first_phase_vel_index],
                 ]
             )
+            obs = self.apply_randomization(obs)
+
             state = np.concatenate(
                 [
                     useful_state,
@@ -664,23 +660,19 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             )
 
             # make useful_obs to be only include joint position and velocity
-            obs = self.apply_randomization(
-                np.concatenate(
-                    [
-                        joint_position,
-                        joint_velocity,
-                    ]
-                )
-            )
+
             obs = np.concatenate(
                 [
-                    obs,
+                    joint_position,
+                    joint_velocity,
+                    new_orientation[:],
+                    motor_position,
                     motor_velocity,
-                    new_translationalAcceleration[:],
                     ref_pos[self.second_phase_pos_index],
                     ref_vel[self.second_phase_vel_index],
                 ]
             )
+            obs = self.apply_randomization(obs)
             state = np.concatenate(
                 [
                     useful_state,
