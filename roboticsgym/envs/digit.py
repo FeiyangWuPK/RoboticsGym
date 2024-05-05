@@ -310,7 +310,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         reward = (
             0.1 * forward_reward
             + 0.1 * healthy_reward
-            + tracking_reward
+            # + tracking_reward
             - 0.1 * ctrl_cost
         )
         observation = self._get_obs()
