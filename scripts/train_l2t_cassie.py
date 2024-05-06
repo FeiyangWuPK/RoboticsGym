@@ -738,7 +738,7 @@ def imitation_learning_second_stage():
     config = {
         "teacher_policy_type": "IPMDPolicy",
         "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 5e6,
+        "total_timesteps": 1e7,
         "env_id": "CassieMirror-v6",
         "buffer_size": int(1e6),
         "train_freq": 1,
@@ -748,7 +748,7 @@ def imitation_learning_second_stage():
         "ent_coef": "auto",
         "student_ent_coef": "auto",
         "learning_rate": 3e-4,
-        "n_envs": 24,
+        "n_envs": 12,
         "batch_size": 256,
         "seed": 42,
         "expert_replaybuffersize": 600,
@@ -768,7 +768,7 @@ def imitation_learning_second_stage():
         project="ICML2024 Guided Learning",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name="Testing v6",
+        name="Testing v6 student only ",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
@@ -1316,10 +1316,10 @@ def train_rl_cassie_v6():
         "train_freq": 1,
         "gradient_steps": 1,
         "progress_bar": True,
-        "verbose": 1,
+        "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 3e-4,
+        "learning_rate": 3e-5,
         "n_envs": 12,
         "batch_size": 256,
         "seed": 42,
@@ -1337,7 +1337,7 @@ def train_rl_cassie_v6():
         sync_tensorboard=True,
         save_code=False,
         reinit=True,
-        notes="0.2 chance student explore, longer training",
+        notes="0.2, w CL, l1 loss",
     )
     wandb.run.log_code(".")
 
@@ -1359,9 +1359,9 @@ def train_rl_cassie_v6():
         teacher_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/teacher/",
         log_path=f"logs/{run.project}/{run.name}/teacher/",
-        eval_freq=20000,
+        eval_freq=5000,
         n_eval_episodes=1,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -1377,9 +1377,9 @@ def train_rl_cassie_v6():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=20000,
-        n_eval_episodes=1,
-        deterministic=True,
+        eval_freq=5000,
+        n_eval_episodes=5,
+        deterministic=False,
         render=False,
         verbose=1,
     )
