@@ -103,3 +103,62 @@ def train_digit_sac(cfg: DictConfig):
     )
 
     run.finish()  # type: ignore
+
+
+@hydra.main(config_path="configs", config_name="train_digit")
+def visualize_expert_trajectory(cfg: DictConfig):
+    """
+    Visualize Digit Expert data.
+    """
+    run = wandb.init(
+        project=cfg.wandb.project,
+        config=dict(cfg),  # Passes all the configurations to WandB
+        name="Visualize expert trajectory",
+        monitor_gym=cfg.env.name,
+        save_code=True,
+        group=cfg.wandb.group,
+        sync_tensorboard=cfg.wandb.sync_tensorboard,
+        # entity=cfg.wandb.entity,
+    )
+
+    # Create the environment
+    env = make_vec_env("DigitViz-v1", n_envs=cfg.env.n_envs, seed=cfg.env.seed)
+    eval_env = make_vec_env("DigitViz-v1", n_envs=1, seed=cfg.env.seed)
+
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
+        log_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
+        eval_freq=1,
+        n_eval_episodes=5,
+        deterministic=True,
+        render=False,
+        verbose=1,
+    )
+    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
+    wandb_callback = WandbCallback()
+
+    # Create the model
+    model = SAC(
+        "MlpPolicy",
+        env,
+        verbose=cfg.training.verbose,
+        learning_rate=cfg.training.learning_rate,
+        buffer_size=cfg.training.buffer_size,
+        batch_size=cfg.training.batch_size,
+        learning_starts=cfg.training.learning_starts,
+        train_freq=cfg.training.train_freq,
+        gradient_steps=cfg.training.gradient_steps,
+        ent_coef=cfg.training.ent_coef,
+        tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
+    )
+
+    # Train the model
+    model.learn(
+        total_timesteps=1,
+        progress_bar=True,
+        log_interval=10,
+        callback=CallbackList([eval_callback, video_callback, wandb_callback]),
+    )
+
+    run.finish()  # type: ignore

@@ -38,3 +38,9 @@ register(
     entry_point="roboticsgym.envs.digit:DigitEnv",
     max_episode_steps=1000,
 )
+
+register(
+    id="DigitViz-v1",
+    entry_point="roboticsgym.envs.digit_viz:DigitEnv",
+    max_episode_steps=1000,
+)

@@ -59,7 +59,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_reward = healthy_reward
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
-        self.timestamp = 11000
+        self.timestamp = 0
         self.frame_skip = 10
 
         self._reset_noise_scale = reset_noise_scale
@@ -92,8 +92,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             + "reference_trajectories/digit_state_20240422.csv"
         )
 
-        self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
-        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
+        self.init_qpos, self.init_qvel = self.ref_trajectory.state(0)
+        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(0)
 
         # Index from README. The toes are actuated by motor A and B.
         self.p_index = [
@@ -259,7 +259,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             torque = self.kp * (target_position - current_position) + self.kd * (
                 target_velocity - current_velocity
             )
-            # torque = [(i / j) for i, j in zip(torque, self.gear_ratio)]
+            torque = [(i / j) for i, j in zip(torque, self.gear_ratio)]
             self.data.ctrl[:] = torque
 
             mj_step(self.model, self.data)
@@ -276,9 +276,12 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         xy_position_before = mass_center(self.model, self.data)
         # print(action)
-        q_pos_modified = action + self.ref_qpos[self.p_index]
+        # q_pos_modified = action + self.ref_qpos[self.p_index]
+        zero_action = np.zeros_like(action)
 
-        self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
+        # self._step_mujoco_simulation(zero_action, self.frame_skip)
+
+        self.set_state(self.ref_qpos, self.ref_qvel)
 
         xy_position_after = mass_center(self.model, self.data)
 
@@ -322,6 +325,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
         observation = self._get_obs()
         terminated = self.terminated
+        terminated = False
         info = {
             "reward_linvel": forward_reward,
             "reward_quadctrl": -ctrl_cost,

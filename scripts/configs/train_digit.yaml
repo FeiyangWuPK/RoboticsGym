@@ -4,11 +4,11 @@ env:
   seed: 42
 
 training:
-  total_timesteps: 20000000
-  learning_rate: 0.0003
+  total_timesteps: 10000000
+  learning_rate: 0.003
   buffer_size: 1000000
   batch_size: 256
-  learning_starts: 10000
+  learning_starts: 100
   train_freq: 1
   gradient_steps: 1
   ent_coef: "auto"
@@ -17,7 +17,7 @@ training:
 
 wandb:
   project: "CoRL2024 L2T Digit"
-  run_name: "SAC_Digit"
+  run_name: "SAC_Digit, New reward"
   group: "Digit"
   entity: "fywu"
   sync_tensorboard: True
