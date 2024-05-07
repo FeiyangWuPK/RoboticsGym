@@ -9,5 +9,5 @@ from scripts.train_l2t_cassie import (
 )
 
 if __name__ == "__main__":
-    imitation_learning_second_stage()
-    # train_rl_cassie_v6()
+    # imitation_learning_second_stage()
+    train_rl_cassie_v6()

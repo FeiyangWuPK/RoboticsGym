@@ -551,11 +551,11 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
             # make useful_obs to be only include joint position and velocity
             obs = np.concatenate(
                 [
-                    state.joint.position[:],
-                    state.joint.velocity[:],
                     new_orientation[:],
                     state.motor.position[:],
                     state.motor.velocity[:],
+                    state.joint.position[:],
+                    state.joint.velocity[:],
                 ]
             )
             obs = self.apply_randomization(obs)
@@ -668,11 +668,11 @@ class OldCassieMirrorEnv(gym.Env, utils.EzPickle):
 
             obs = np.concatenate(
                 [
-                    joint_position,
-                    joint_velocity,
                     new_orientation[:],
                     motor_position,
                     motor_velocity,
+                    joint_position,
+                    joint_velocity,
                 ]
             )
             obs = self.apply_randomization(obs)
