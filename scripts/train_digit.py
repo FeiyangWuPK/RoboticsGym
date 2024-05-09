@@ -63,8 +63,16 @@ def train_digit_sac(cfg: DictConfig):
     )
 
     # Create the environment
-    env = make_vec_env(cfg.env.name, n_envs=cfg.env.n_envs, seed=cfg.env.seed)
-    eval_env = make_vec_env(cfg.env.name, n_envs=1, seed=cfg.env.seed)
+    env = make_vec_env(
+        cfg.env.name,
+        n_envs=cfg.env.n_envs,
+        seed=cfg.env.seed,
+    )
+    eval_env = make_vec_env(
+        cfg.env.name,
+        n_envs=1,
+        seed=cfg.env.seed,
+    )
 
     eval_callback = EvalCallback(
         eval_env,
@@ -73,7 +81,7 @@ def train_digit_sac(cfg: DictConfig):
         eval_freq=10000,
         n_eval_episodes=5,
         deterministic=True,
-        render=False,
+        render=True,
         verbose=1,
     )
     video_callback = VideoEvalCallback(eval_every=10000, eval_env=eval_env)
@@ -119,11 +127,22 @@ def visualize_expert_trajectory(cfg: DictConfig):
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
+        mode="offline",
     )
 
     # Create the environment
-    env = make_vec_env("DigitViz-v1", n_envs=cfg.env.n_envs, seed=cfg.env.seed)
-    eval_env = make_vec_env("DigitViz-v1", n_envs=1, seed=cfg.env.seed)
+    env = make_vec_env(
+        "DigitViz-v1",
+        n_envs=1,
+        seed=cfg.env.seed,
+        env_kwargs={"render_mode": "human"},
+    )
+    eval_env = make_vec_env(
+        "DigitViz-v1",
+        n_envs=1,
+        seed=cfg.env.seed,
+        env_kwargs={"render_mode": "human"},
+    )
 
     eval_callback = EvalCallback(
         eval_env,
@@ -132,7 +151,7 @@ def visualize_expert_trajectory(cfg: DictConfig):
         eval_freq=1,
         n_eval_episodes=5,
         deterministic=True,
-        render=False,
+        render=True,
         verbose=1,
     )
     video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)

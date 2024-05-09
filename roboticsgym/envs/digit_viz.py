@@ -77,7 +77,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit_v3.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,

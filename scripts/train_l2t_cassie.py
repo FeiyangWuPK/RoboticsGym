@@ -818,7 +818,7 @@ def imitation_learning_second_stage():
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/student/",
         log_path=f"logs/{run.project}/{run.name}/student/",
-        eval_freq=500,
+        eval_freq=1000,
         n_eval_episodes=5,
         deterministic=False,
         render=False,
@@ -1310,7 +1310,7 @@ def train_rl_cassie_v6():
     config = {
         "teacher_policy_type": "L2TPolicy",
         "student_policy_type": "L2TPolicy",
-        "total_timesteps": 1e7,
+        "total_timesteps": 5e6,
         "env_id": "CassieMirror-v6",
         "buffer_size": int(1e6),
         "train_freq": 1,
@@ -1319,8 +1319,8 @@ def train_rl_cassie_v6():
         "verbose": 0,
         "ent_coef": "auto",
         "student_ent_coef": "auto",
-        "learning_rate": 3e-5,
-        "n_envs": 12,
+        "learning_rate": 3e-4,
+        "n_envs": 24,
         "batch_size": 256,
         "seed": 42,
         "teacher_gamma": 0.99,
@@ -1337,7 +1337,7 @@ def train_rl_cassie_v6():
         sync_tensorboard=True,
         save_code=False,
         reinit=True,
-        notes="0.2, w CL, l1 loss",
+        notes="ad hoc tuning",
     )
     wandb.run.log_code(".")
 

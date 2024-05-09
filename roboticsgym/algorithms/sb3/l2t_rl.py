@@ -644,16 +644,14 @@ class L2TRL(OffPolicyAlgorithm):
             # student_min_qf_pi, _ = th.min(student_q_values_pi, dim=1, keepdim=True)
 
             # Assymetric actor loss
-            # q_values_pi = th.cat(
-            #     self.critic(replay_data.observations["state"], student_actions_pi),  # type: ignore
-            #     dim=1,
-            # )
-            # teacher_min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
-            # student_actor_loss = ent_coef * student_log_prob - teacher_min_qf_pi
-            # student_actor_loss = student_actor_loss.mean()
-            student_actor_loss = F.smooth_l1_loss(
-                student_actions_pi, actions_pi.detach()
+            q_values_pi = th.cat(
+                self.critic(replay_data.observations["state"], student_actions_pi),  # type: ignore
+                dim=1,
             )
+            teacher_min_qf_pi, _ = th.min(q_values_pi, dim=1, keepdim=True)
+            student_actor_loss = ent_coef * student_log_prob - teacher_min_qf_pi
+            student_actor_loss = student_actor_loss.mean()
+            student_actor_loss += F.mse_loss(student_actions_pi, actions_pi.detach())
 
             student_actor_losses.append(student_actor_loss.item())
 
