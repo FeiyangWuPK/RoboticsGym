@@ -59,7 +59,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_reward = healthy_reward
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
-        self.timestamp = 11000
+        self.start_time_stamp = 11000
+        self.timestamp = self.start_time_stamp
         self.frame_skip = 10
 
         self._reset_noise_scale = reset_noise_scale
@@ -71,13 +72,13 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         observation_space = Box(
             low=-np.inf,
             high=np.inf,
-            shape=(109,),
+            shape=(106,),
             dtype=np.float64,
         )
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit_v3.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
@@ -93,6 +94,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
 
         self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
+        # self.init_qvel = np.zeros_like(self.init_qvel)
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
         # Index from README. The toes are actuated by motor A and B.
@@ -142,53 +144,31 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         ]
         self.kp = np.array(
             [
-                100,
-                100,
-                88,
-                96,
-                50,
-                50,
-                50,
-                50,
-                50,
-                50,
-                100,
-                100,
-                88,
-                96,
-                50,
-                50,
-                50,
-                50,
-                50,
-                50,
+                1400,
+                1000,
+                1167,
+                1300,
+                533,
+                533,
+                500,
+                500,
+                500,
+                500,
+                1400,
+                1000,
+                1167,
+                1300,
+                533,
+                533,
+                500,
+                500,
+                500,
+                500,
             ]
         )
-        self.kd = np.array(
-            [
-                10.0,
-                10.0,
-                8.0,
-                9.6,
-                5.0,
-                5.0,
-                5.0,
-                5.0,
-                5.0,
-                5.0,
-                10.0,
-                10.0,
-                8.0,
-                9.6,
-                5.0,
-                5.0,
-                5.0,
-                5.0,
-                5.0,
-                5.0,
-            ]
-        )
+        self.kd = np.array([5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5])
         self.gear_ratio = self.model.actuator_gear[:, 0]
+
         self.reset_model()
 
     @property
@@ -206,11 +186,12 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
     def is_healthy(self):
         min_z, max_z = self._healthy_z_range
         is_healthy = min_z < self.data.qpos[2] < max_z
-        is_healthy = is_healthy and (not np.allclose(self.data.cfrc_ext.flat.copy(), 0))
+        # is_healthy = is_healthy and (not np.allclose(self.data.cfrc_ext.flat.copy(), 0))
         return is_healthy
 
     @property
     def terminated(self):
+
         terminated = (not self.is_healthy) if self._terminate_when_unhealthy else False
         return terminated
 
@@ -237,7 +218,6 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             (
                 self.root_lin_vel,
                 self.root_ang_vel,
-                eular_angles,
                 qpos[:7],
                 position,
                 velocity,
@@ -248,19 +228,24 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             )
         )
 
-    def _step_mujoco_simulation(self, ctrl, n_frames):
+    def _step_mujoco_simulation(self, ctrl: np.array, n_frames: int) -> None:
         # mj_step(self.model, self.data, nstep=n_frames)
+        target_position = ctrl
+        target_velocity = np.zeros(20)
         for _ in range(n_frames):
-            target_position = ctrl
-            target_velocity = np.zeros(20)
-            current_position = self.data.qpos[self.p_index]
-            current_velocity = self.data.qvel[self.v_index]
+            # Get current motor position and velocity
+            gear_ratios = self.model.actuator_gear[:, 0]
+            motor_positions = self.data.actuator_length
+            current_position = np.divide(motor_positions, gear_ratios)
+            motor_velocities = self.data.actuator_velocity
+            current_velocity = np.divide(motor_velocities, gear_ratios)
 
+            # Compute torque using PD gain
             torque = self.kp * (target_position - current_position) + self.kd * (
                 target_velocity - current_velocity
             )
-            # torque = [(i / j) for i, j in zip(torque, self.gear_ratio)]
-            self.data.ctrl[:] = torque
+            torque = np.divide(torque, gear_ratios)
+            self.data.ctrl[:] = torque.copy()
 
             mj_step(self.model, self.data)
 
@@ -270,74 +255,64 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # mj_rnePostConstraint(self.model, self.data)
 
     def step(self, action):
-        # 5 because recording is 1000hz and simulation is (2000/10)=200hz
-
+        # Get reference qpos and qvel
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
+        # Compute xy position before and after
         xy_position_before = mass_center(self.model, self.data)
-        # print(action)
-        q_pos_modified = action + self.ref_qpos[self.p_index]
 
-        self._step_mujoco_simulation(q_pos_modified, self.frame_skip)
+        # Create PD target
+        qd_target = action + self.ref_qpos[self.p_index]
+
+        self._step_mujoco_simulation(qd_target, self.frame_skip)
 
         xy_position_after = mass_center(self.model, self.data)
 
         xy_velocity = (xy_position_after - xy_position_before) / self.dt
         x_velocity, y_velocity = xy_velocity
 
-        qpos = self.data.qpos.flat.copy()
-        qvel = self.data.qvel.flat.copy()
+        # Compute reward using current qpos and qvel
+        qpos = self.data.qpos.copy()
+        qvel = self.data.qvel.copy()
 
         ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
         forward_reward = self._forward_reward_weight * x_velocity
         healthy_reward = self.healthy_reward
         tracking_reward = (
-            np.exp(
-                -10
-                * np.linalg.norm(
-                    self.ref_qpos[self.p_index] - qpos[self.p_index], ord=2
-                )
-            )
-            + np.exp(
-                -10
-                * np.linalg.norm(
-                    self.ref_qvel[self.v_index] - qvel[self.v_index], ord=2
-                )
-            )
-            + np.exp(-5 * np.linalg.norm(self.ref_qpos - qpos, ord=2))
-            + np.exp(-0.1 * np.linalg.norm(self.ref_qvel - qvel, ord=2))
             # root position tracking
-            + np.exp(-20 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3], ord=2))
+            +np.exp(-30 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3]))
             # root rotation tracking
-            + np.exp(-10 * np.linalg.norm(self.ref_qpos[3:7] - qpos[3:7], ord=2))
+            + np.exp(-10 * np.linalg.norm(self.ref_qpos[3:7] - qpos[3:7]))
             # root linear vel tracking
-            + np.exp(-2 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3], ord=2))
+            + np.exp(-20 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3]))
             # root angular vel tracking
-            + np.exp(-0.2 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6], ord=2))
+            + np.exp(-0.2 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6]))
         )
 
         reward = (
             0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
         )
+
         observation = self._get_obs()
         terminated = self.terminated
-        info = {
-            "reward_linvel": forward_reward,
-            "reward_quadctrl": -ctrl_cost,
-            "reward_alive": healthy_reward,
-            "x_position": xy_position_after[0],
-            "y_position": xy_position_after[1],
-            "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
-            "x_velocity": x_velocity,
-            "y_velocity": y_velocity,
-            "forward_reward": forward_reward,
-        }
+        # info = {
+        #     "reward_tracking": tracking_reward,
+        #     "reward_quadctrl": -ctrl_cost,
+        #     "reward_alive": healthy_reward,
+        #     "x_position": xy_position_after[0],
+        #     "y_position": xy_position_after[1],
+        #     "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
+        #     "x_velocity": x_velocity,
+        #     "y_velocity": y_velocity,
+        #     "forward_reward": forward_reward,
+        # }
+        info = None
 
         if self.render_mode == "human":
             self.render()
 
-        self.timestamp += 5
+        self.timestamp += int(self.frame_skip / 2)
         return observation, reward, terminated, False, info
 
     def reset_model(self):
@@ -348,11 +323,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         qvel = self.init_qvel
         self.set_state(qpos, qvel)
 
-        self.timestamp = 11000
+        self.timestamp = self.start_time_stamp
         observation = self._get_obs()
-
-        # self.data.userdata = np.zeros(20)  # Use userdata as target position.
-        # Define a callback that modify the ctrl before mj_step.
 
         return observation
 

@@ -259,7 +259,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             torque = self.kp * (target_position - current_position) + self.kd * (
                 target_velocity - current_velocity
             )
-            torque = [(i / j) for i, j in zip(torque, self.gear_ratio)]
+            # torque = [(i / j) for i, j in zip(torque, self.gear_ratio)]
             self.data.ctrl[:] = torque
 
             mj_step(self.model, self.data)
@@ -270,10 +270,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # mj_rnePostConstraint(self.model, self.data)
 
     def step(self, action):
-        # 5 because recording is 1000hz and simulation is (2000/10)=200hz
-
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
-
+        print((self.model.actuator_gear))
+        exit(0)
         xy_position_before = mass_center(self.model, self.data)
         # print(action)
         # q_pos_modified = action + self.ref_qpos[self.p_index]
@@ -341,7 +340,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
 
-        self.timestamp += 5
+        self.timestamp += self.frame_skip / 2
         return observation, reward, terminated, False, info
 
     def reset_model(self):

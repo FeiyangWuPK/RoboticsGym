@@ -7,7 +7,10 @@ from stable_baselines3.common.callbacks import (
     EvalCallback,
     CallbackList,
 )
+
 from stable_baselines3.sac import SAC
+from stable_baselines3.ppo import PPO
+
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
 from stable_baselines3.common.evaluation import evaluate_policy
 
@@ -80,11 +83,11 @@ def train_digit_sac(cfg: DictConfig):
         log_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         eval_freq=10000,
         n_eval_episodes=5,
-        deterministic=True,
+        deterministic=False,
         render=True,
         verbose=1,
     )
-    video_callback = VideoEvalCallback(eval_every=10000, eval_env=eval_env)
+    # video_callback = VideoEvalCallback(eval_every=10000, eval_env=eval_env)
     wandb_callback = WandbCallback()
 
     # Create the model
@@ -92,7 +95,8 @@ def train_digit_sac(cfg: DictConfig):
         "MlpPolicy",
         env,
         verbose=cfg.training.verbose,
-        learning_rate=cfg.training.learning_rate,
+        # learning_rate=cfg.training.learning_rate,
+        learning_rate=linear_schedule(3e-3),
         buffer_size=cfg.training.buffer_size,
         batch_size=cfg.training.batch_size,
         learning_starts=cfg.training.learning_starts,
@@ -101,13 +105,16 @@ def train_digit_sac(cfg: DictConfig):
         ent_coef=cfg.training.ent_coef,
         tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
     )
+    model.set_parameters(
+        "logs/CoRL2024 L2T Digit/With old PD gain/o00dyabi/best_model.zip"
+    )
 
     # Train the model
     model.learn(
         total_timesteps=cfg.training.total_timesteps,
         progress_bar=True,
-        log_interval=1000,
-        callback=CallbackList([eval_callback, video_callback, wandb_callback]),
+        log_interval=100,
+        callback=CallbackList([eval_callback, wandb_callback]),
     )
 
     run.finish()  # type: ignore
@@ -135,7 +142,7 @@ def visualize_expert_trajectory(cfg: DictConfig):
         "DigitViz-v1",
         n_envs=1,
         seed=cfg.env.seed,
-        env_kwargs={"render_mode": "human"},
+        # env_kwargs={"render_mode": "human"},
     )
     eval_env = make_vec_env(
         "DigitViz-v1",
