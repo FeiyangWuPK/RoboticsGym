@@ -271,8 +271,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
     def step(self, action):
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
-        print((self.model.actuator_gear))
-        exit(0)
+
         xy_position_before = mass_center(self.model, self.data)
         # print(action)
         # q_pos_modified = action + self.ref_qpos[self.p_index]
@@ -340,7 +339,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
 
-        self.timestamp += self.frame_skip / 2
+        self.timestamp += 5
         return observation, reward, terminated, False, info
 
     def reset_model(self):

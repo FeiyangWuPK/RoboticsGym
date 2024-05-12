@@ -1,10 +1,10 @@
 env:
   name: Digit-v1
-  n_envs: 32
+  n_envs: 40
   seed: 42
 
 training:
-  total_timesteps: 5000000
+  total_timesteps: 20000000
   learning_rate: 0.0003
   buffer_size: 1000000
   batch_size: 256
@@ -12,12 +12,12 @@ training:
   train_freq: 1
   gradient_steps: 1
   ent_coef: "auto"
-  model_save_path: "sac_digit_model"
+  model_save_path: "ppo_digit_model"
   verbose: 1
 
 wandb:
   project: "CoRL2024 L2T Digit"
-  run_name: "SAC With new PD gain"
+  run_name: "PPO With new PD gain"
   group: "Digit"
   entity: "fywu"
   sync_tensorboard: True

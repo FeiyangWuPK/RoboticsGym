@@ -228,6 +228,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             )
         )
 
+    # Basically PD control
     def _step_mujoco_simulation(self, ctrl: np.array, n_frames: int) -> None:
         # mj_step(self.model, self.data, nstep=n_frames)
         target_position = ctrl
@@ -307,7 +308,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         #     "y_velocity": y_velocity,
         #     "forward_reward": forward_reward,
         # }
-        info = None
+        info = {}
 
         if self.render_mode == "human":
             self.render()
