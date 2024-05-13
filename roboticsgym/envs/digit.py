@@ -78,7 +78,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
@@ -237,15 +237,17 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             # Get current motor position and velocity
             gear_ratios = self.model.actuator_gear[:, 0]
             motor_positions = self.data.actuator_length
-            current_position = np.divide(motor_positions, gear_ratios)
+            current_position = motor_positions
+            # current_position = np.divide(motor_positions, gear_ratios)
             motor_velocities = self.data.actuator_velocity
-            current_velocity = np.divide(motor_velocities, gear_ratios)
+            current_velocity = motor_velocities
+            # current_velocity = np.divide(motor_velocities, gear_ratios)
 
             # Compute torque using PD gain
             torque = self.kp * (target_position - current_position) + self.kd * (
                 target_velocity - current_velocity
             )
-            torque = np.divide(torque, gear_ratios)
+            # torque = np.divide(torque, gear_ratios)
             self.data.ctrl[:] = torque.copy()
 
             mj_step(self.model, self.data)
@@ -281,19 +283,25 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         forward_reward = self._forward_reward_weight * x_velocity
         healthy_reward = self.healthy_reward
         tracking_reward = (
+            np.exp(
+                -10 * np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index])
+            )
             # root position tracking
-            +np.exp(-30 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3]))
+            + np.exp(-10 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3]))
             # root rotation tracking
             + np.exp(-10 * np.linalg.norm(self.ref_qpos[3:7] - qpos[3:7]))
             # root linear vel tracking
-            + np.exp(-20 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3]))
+            + np.exp(-10 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3]))
             # root angular vel tracking
-            + np.exp(-0.2 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6]))
+            + np.exp(-10 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6]))
         )
 
-        reward = (
-            0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
-        )
+        # print("current and ref pos", qpos[:3], self.ref_qpos[:3])
+
+        # reward = (
+        #     0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
+        # )
+        reward = tracking_reward
 
         observation = self._get_obs()
         terminated = self.terminated

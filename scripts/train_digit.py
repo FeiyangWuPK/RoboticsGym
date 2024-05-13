@@ -128,7 +128,7 @@ def train_digit_sac(cfg: DictConfig):
 @hydra.main(config_path="configs", config_name="train_digit")
 def train_digit_ppo(cfg: DictConfig):
     """
-    Train Digit with SAC.
+    Train Digit with PPO.
     """
     run = wandb.init(
         project=cfg.wandb.project,
@@ -146,6 +146,7 @@ def train_digit_ppo(cfg: DictConfig):
         cfg.env.name,
         n_envs=cfg.env.n_envs,
         seed=cfg.env.seed,
+        # env_kwargs={"render_mode": "human"},
     )
     eval_env = make_vec_env(
         cfg.env.name,
@@ -192,9 +193,9 @@ def train_digit_ppo(cfg: DictConfig):
         batch_size=cfg.training.batch_size,
         tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
     )
-    model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO With new PD gain/t8ouf8ln/best_model.zip"
-    )
+    # model.set_parameters(
+    #     "logs/CoRL2024 L2T Digit/PPO With new PD gain/t8ouf8ln/best_model.zip"
+    # )
     # Train the model
     model.learn(
         total_timesteps=cfg.training.total_timesteps,

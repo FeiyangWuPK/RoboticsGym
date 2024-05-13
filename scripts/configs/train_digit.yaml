@@ -1,10 +1,10 @@
 env:
   name: Digit-v1
-  n_envs: 40
+  n_envs: 16
   seed: 42
 
 training:
-  total_timesteps: 20000000
+  total_timesteps: 5000000
   learning_rate: 0.0003
   buffer_size: 1000000
   batch_size: 256
@@ -17,7 +17,7 @@ training:
 
 wandb:
   project: "CoRL2024 L2T Digit"
-  run_name: "PPO With new PD gain"
+  run_name: "PPO With new PD gain, no gear ratio"
   group: "Digit"
   entity: "fywu"
   sync_tensorboard: True
