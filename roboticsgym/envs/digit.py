@@ -202,18 +202,18 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         position = qpos[self.p_index]
         velocity = qvel[self.v_index]
 
-        com_inertia = self.data.cinert.flat.copy()
-        com_velocity = self.data.cvel.flat.copy()
+        # com_inertia = self.data.cinert.flat.copy()
+        # com_velocity = self.data.cvel.flat.copy()
 
-        actuator_forces = self.data.qfrc_actuator.flat.copy()
-        external_contact_forces = self.data.cfrc_ext.flat.copy()
+        # actuator_forces = self.data.qfrc_actuator.flat.copy()
+        # external_contact_forces = self.data.cfrc_ext.flat.copy()
 
         self.root_quat = qpos[3:7]
         roll, pitch, yaw = quaternion2euler(self.root_quat)
         base_rot = euler2mat(0, 0, yaw, "sxyz")
         self.root_lin_vel = np.transpose(base_rot).dot(qvel[0:3])
         self.root_ang_vel = np.transpose(base_rot).dot(qvel[3:6])
-        eular_angles = np.array([roll, pitch, yaw])
+        # eular_angles = np.array([roll, pitch, yaw])
         return np.concatenate(
             (
                 self.root_lin_vel,
@@ -229,33 +229,30 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
 
     # Basically PD control
-    def _step_mujoco_simulation(self, ctrl: np.array, n_frames: int) -> None:
-        # mj_step(self.model, self.data, nstep=n_frames)
-        target_position = ctrl
+    def _step_mujoco_simulation(self, target_position: np.array, n_frames: int) -> None:
         target_velocity = np.zeros(20)
         for _ in range(n_frames):
-            # Get current motor position and velocity
-            gear_ratios = self.model.actuator_gear[:, 0]
+
             motor_positions = self.data.actuator_length
             current_position = motor_positions
-            # current_position = np.divide(motor_positions, gear_ratios)
+            current_position = np.divide(motor_positions, self.gear_ratio)
             motor_velocities = self.data.actuator_velocity
             current_velocity = motor_velocities
-            # current_velocity = np.divide(motor_velocities, gear_ratios)
+            current_velocity = np.divide(motor_velocities, self.gear_ratio)
 
             # Compute torque using PD gain
             torque = self.kp * (target_position - current_position) + self.kd * (
                 target_velocity - current_velocity
             )
-            # torque = np.divide(torque, gear_ratios)
+            torque = np.divide(torque, self.gear_ratio)
             self.data.ctrl[:] = torque.copy()
 
             mj_step(self.model, self.data)
 
-        # As of MuJoCo 2.0, force-related quantities like cacc are not computed
-        # unless there's a force sensor in the model.
-        # See https://github.com/openai/gym/issues/1541
-        # mj_rnePostConstraint(self.model, self.data)
+            # As of MuJoCo 2.0, force-related quantities like cacc are not computed
+            # unless there's a force sensor in the model.
+            # See https://github.com/openai/gym/issues/1541
+            mj_rnePostConstraint(self.model, self.data)
 
     def step(self, action):
         # Get reference qpos and qvel
@@ -265,9 +262,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         xy_position_before = mass_center(self.model, self.data)
 
         # Create PD target
-        qd_target = action + self.ref_qpos[self.p_index]
+        pd_target = action + self.ref_qpos[self.p_index]
 
-        self._step_mujoco_simulation(qd_target, self.frame_skip)
+        self._step_mujoco_simulation(pd_target, self.frame_skip)
 
         xy_position_after = mass_center(self.model, self.data)
 
@@ -280,8 +277,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
-        forward_reward = self._forward_reward_weight * x_velocity
-        healthy_reward = self.healthy_reward
+        # forward_reward = self._forward_reward_weight * x_velocity
+        # healthy_reward = self.healthy_reward
         tracking_reward = (
             np.exp(
                 -10 * np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index])
@@ -301,7 +298,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # reward = (
         #     0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
         # )
-        reward = tracking_reward
+        reward = tracking_reward - ctrl_cost
 
         observation = self._get_obs()
         terminated = self.terminated
@@ -321,12 +318,12 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
 
-        self.timestamp += int(self.frame_skip / 2)
+        self.timestamp += 10
         return observation, reward, terminated, False, info
 
     def reset_model(self):
-        noise_low = -self._reset_noise_scale
-        noise_high = self._reset_noise_scale
+        # noise_low = -self._reset_noise_scale
+        # noise_high = self._reset_noise_scale
 
         qpos = self.init_qpos
         qvel = self.init_qvel
