@@ -90,30 +90,21 @@ def train_digit_sac(cfg: DictConfig):
     wandb_callback = WandbCallback()
 
     # Create the model
-    # model = SAC(
-    #     "MlpPolicy",
-    #     env,
-    #     verbose=cfg.training.verbose,
-    #     # learning_rate=cfg.training.learning_rate,
-    #     learning_rate=linear_schedule(3e-3),
-    #     buffer_size=cfg.training.buffer_size,
-    #     batch_size=cfg.training.batch_size,
-    #     learning_starts=cfg.training.learning_starts,
-    #     train_freq=cfg.training.train_freq,
-    #     gradient_steps=cfg.training.gradient_steps,
-    #     ent_coef=cfg.training.ent_coef,
-    #     tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
-    # )
-    # model.set_parameters(
-    #     "logs/CoRL2024 L2T Digit/With old PD gain/o00dyabi/best_model.zip"
-    # )
-    model = PPO(
+    model = SAC(
         "MlpPolicy",
         env,
         verbose=cfg.training.verbose,
+        # learning_rate=cfg.training.learning_rate,
         learning_rate=linear_schedule(3e-3),
+        buffer_size=cfg.training.buffer_size,
+        batch_size=cfg.training.batch_size,
+        learning_starts=cfg.training.learning_starts,
+        train_freq=cfg.training.train_freq,
+        gradient_steps=cfg.training.gradient_steps,
+        ent_coef=cfg.training.ent_coef,
         tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
     )
+
     # Train the model
     model.learn(
         total_timesteps=cfg.training.total_timesteps,
@@ -167,24 +158,6 @@ def train_digit_ppo(cfg: DictConfig):
     video_callback = VideoEvalCallback(eval_every=500000, eval_env=eval_env)
     wandb_callback = WandbCallback()
 
-    # Create the model
-    # model = SAC(
-    #     "MlpPolicy",
-    #     env,
-    #     verbose=cfg.training.verbose,
-    #     # learning_rate=cfg.training.learning_rate,
-    #     learning_rate=linear_schedule(3e-3),
-    #     buffer_size=cfg.training.buffer_size,
-    #     batch_size=cfg.training.batch_size,
-    #     learning_starts=cfg.training.learning_starts,
-    #     train_freq=cfg.training.train_freq,
-    #     gradient_steps=cfg.training.gradient_steps,
-    #     ent_coef=cfg.training.ent_coef,
-    #     tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
-    # )
-    # model.set_parameters(
-    #     "logs/CoRL2024 L2T Digit/With old PD gain/o00dyabi/best_model.zip"
-    # )
     model = PPO(
         "MlpPolicy",
         env,
@@ -216,12 +189,12 @@ def visualize_expert_trajectory(cfg: DictConfig):
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
         name="Visualize expert trajectory",
-        monitor_gym=cfg.env.name,
+        monitor_gym=True,
         save_code=True,
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
-        mode="offline",
+        # mode="offline",
     )
 
     # Create the environment
@@ -231,24 +204,32 @@ def visualize_expert_trajectory(cfg: DictConfig):
         seed=cfg.env.seed,
         # env_kwargs={"render_mode": "human"},
     )
+
     eval_env = make_vec_env(
         "DigitViz-v1",
         n_envs=1,
         seed=cfg.env.seed,
-        env_kwargs={"render_mode": "human"},
+        env_kwargs={"render_mode": "rgb_array"},
+    )
+
+    video_env = VecVideoRecorder(
+        eval_env,
+        "./videos/",
+        record_video_trigger=lambda x: x % 1 == 0,
+        video_length=1000,
     )
 
     eval_callback = EvalCallback(
-        eval_env,
+        video_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         log_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         eval_freq=1,
-        n_eval_episodes=5,
+        n_eval_episodes=1,
         deterministic=True,
         render=True,
         verbose=1,
     )
-    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
+    # video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
     wandb_callback = WandbCallback()
 
     # Create the model
@@ -271,7 +252,7 @@ def visualize_expert_trajectory(cfg: DictConfig):
         total_timesteps=1,
         progress_bar=True,
         log_interval=10,
-        callback=CallbackList([eval_callback, video_callback, wandb_callback]),
+        callback=CallbackList([eval_callback, wandb_callback]),
     )
 
     run.finish()  # type: ignore

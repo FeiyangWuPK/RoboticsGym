@@ -4,7 +4,7 @@ env:
   seed: 42
 
 training:
-  total_timesteps: 10000000
+  total_timesteps: 30000000
   learning_rate: 0.0003
   buffer_size: 1000000
   batch_size: 512
@@ -12,12 +12,12 @@ training:
   train_freq: 1
   gradient_steps: 1
   ent_coef: "auto"
-  model_save_path: "ppo_digit_model"
+  model_save_path: "sac_digit_model"
   verbose: 1
 
 wandb:
   project: "CoRL2024 L2T Digit"
-  run_name: "PPO with fast ref traj"
+  run_name: "SAC with 33Hz"
   group: "Digit"
   entity: "fywu"
   sync_tensorboard: True

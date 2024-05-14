@@ -40,7 +40,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 200,
+        "render_fps": 33,
     }
 
     def __init__(
@@ -61,7 +61,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_z_range = healthy_z_range
         self.start_time_stamp = 11000
         self.timestamp = self.start_time_stamp
-        self.frame_skip = 10
+        self.frame_skip = 60
 
         self._reset_noise_scale = reset_noise_scale
 
@@ -318,7 +318,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
 
-        self.timestamp += 10
+        # Because the reference trajectory is at 1000Hz, while the simulation is 2000Hz,
+        # we need to skip 30/2 frames
+        self.timestamp += int(self.frame_skip / 2)
         return observation, reward, terminated, False, info
 
     def reset_model(self):

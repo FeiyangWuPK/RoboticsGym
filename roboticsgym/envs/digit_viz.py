@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import time
 from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 from gymnasium import utils
 from gymnasium.spaces import Box
@@ -40,7 +41,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 200,
+        "render_fps": 33,
     }
 
     def __init__(
@@ -60,7 +61,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
         self.timestamp = 0
-        self.frame_skip = 10
+        self.frame_skip = 60
 
         self._reset_noise_scale = reset_noise_scale
 
@@ -74,6 +75,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             shape=(109,),
             dtype=np.float64,
         )
+        self.timestart = None
 
         MujocoEnv.__init__(
             self,
@@ -270,14 +272,18 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # mj_rnePostConstraint(self.model, self.data)
 
     def step(self, action):
+        if self.timestart is None:
+            self.timestart = time.time()
+
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
         xy_position_before = mass_center(self.model, self.data)
+
         # print(action)
         # q_pos_modified = action + self.ref_qpos[self.p_index]
         zero_action = np.zeros_like(action)
 
-        # self._step_mujoco_simulation(zero_action, self.frame_skip)
+        self._step_mujoco_simulation(zero_action, self.frame_skip)
 
         self.set_state(self.ref_qpos, self.ref_qvel)
 
@@ -339,7 +345,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
 
-        self.timestamp += 5
+        # because ref traj is 1000Hz
+        self.timestamp += int(self.frame_skip / 2)
         return observation, reward, terminated, False, info
 
     def reset_model(self):
