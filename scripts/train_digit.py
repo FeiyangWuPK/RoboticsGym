@@ -194,7 +194,7 @@ def train_digit_ppo(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
     )
     model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO With new PD gain, with gear ratio, reduce control cost/vhppt5mf/best_model.zip"
+        "logs/CoRL2024 L2T Digit/PPO with fast ref traj/iwpsdkf1/best_model.zip"
     )
     # Train the model
     model.learn(
