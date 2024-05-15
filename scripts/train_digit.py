@@ -86,7 +86,7 @@ def train_digit_sac(cfg: DictConfig):
         render=True,
         verbose=1,
     )
-    video_callback = VideoEvalCallback(eval_every=10000, eval_env=eval_env)
+    video_callback = VideoEvalCallback(eval_every=500000, eval_env=eval_env)
     wandb_callback = WandbCallback()
 
     # Create the model
@@ -95,7 +95,7 @@ def train_digit_sac(cfg: DictConfig):
         env,
         verbose=cfg.training.verbose,
         # learning_rate=cfg.training.learning_rate,
-        learning_rate=linear_schedule(3e-3),
+        learning_rate=cfg.training.learning_rate,
         buffer_size=cfg.training.buffer_size,
         batch_size=cfg.training.batch_size,
         learning_starts=cfg.training.learning_starts,
@@ -105,6 +105,9 @@ def train_digit_sac(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
     )
 
+    model.set_parameters(
+        "logs/CoRL2024 L2T Digit/SAC with 33Hz/chhlccmj/best_model.zip"
+    )
     # Train the model
     model.learn(
         total_timesteps=cfg.training.total_timesteps,

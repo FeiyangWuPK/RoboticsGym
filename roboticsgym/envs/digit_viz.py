@@ -21,7 +21,7 @@ from roboticsgym.utils.transform3d import (
 )
 
 DEFAULT_CAMERA_CONFIG = {
-    "trackbodyid": 1,
+    "trackbodyid": 2,
     "distance": 4.0,
     "lookat": np.array((0.0, 0.0, 2.0)),
     "elevation": -20.0,
@@ -91,7 +91,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.ref_trajectory = DigitTrajectory(
             os.getcwd()
             + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_20240422.csv"
+            + "reference_trajectories/digit_state_20240514.csv"
         )
 
         self.init_qpos, self.init_qvel = self.ref_trajectory.state(0)
@@ -192,6 +192,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
         self.gear_ratio = self.model.actuator_gear[:, 0]
         self.reset_model()
+        self.camera_name = "side"
 
     @property
     def healthy_reward(self):
@@ -365,10 +366,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         return observation
 
-    # def viewer_setup(self):
-    #     assert self.viewer is not None
-    #     for key, value in DEFAULT_CAMERA_CONFIG.items():
-    #         if isinstance(value, np.ndarray):
-    #             getattr(self.viewer.cam, key)[:] = value
-    #         else:
-    #             setattr(self.viewer.cam, key, value)
+    def viewer_setup(self):
+        assert self.viewer is not None
+        for key, value in DEFAULT_CAMERA_CONFIG.items():
+            if isinstance(value, np.ndarray):
+                getattr(self.viewer.cam, key)[:] = value
+            else:
+                setattr(self.viewer.cam, key, value)

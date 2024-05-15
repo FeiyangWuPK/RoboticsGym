@@ -20,7 +20,7 @@ from roboticsgym.utils.transform3d import (
 )
 
 DEFAULT_CAMERA_CONFIG = {
-    "trackbodyid": 1,
+    "trackbodyid": 2,
     "distance": 4.0,
     "lookat": np.array((0.0, 0.0, 2.0)),
     "elevation": -20.0,
@@ -62,7 +62,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.start_time_stamp = 11000
         self.timestamp = self.start_time_stamp
         self.frame_skip = 60
-
+        self.camera_name = "side"
         self._reset_noise_scale = reset_noise_scale
 
         self._exclude_current_positions_from_observation = (
@@ -78,7 +78,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
@@ -90,7 +90,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.ref_trajectory = DigitTrajectory(
             os.getcwd()
             + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_20240422.csv"
+            + "reference_trajectories/digit_state_20240514.csv"
         )
 
         self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
@@ -277,8 +277,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
-        # forward_reward = self._forward_reward_weight * x_velocity
-        # healthy_reward = self.healthy_reward
+        forward_reward = self._forward_reward_weight * x_velocity
+        healthy_reward = self.healthy_reward
         tracking_reward = (
             np.exp(
                 -10 * np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index])
@@ -298,7 +298,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # reward = (
         #     0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
         # )
-        reward = tracking_reward  # - ctrl_cost
+        reward = tracking_reward - ctrl_cost
 
         observation = self._get_obs()
         terminated = self.terminated
@@ -315,7 +315,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # }
         info = {}
 
-        if self.render_mode == "human":
+        if self.render_mode == "human" or self.render_mode == "rgb_array":
             self.render()
 
         # Because the reference trajectory is at 1000Hz, while the simulation is 2000Hz,
@@ -336,10 +336,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         return observation
 
-    # def viewer_setup(self):
-    #     assert self.viewer is not None
-    #     for key, value in DEFAULT_CAMERA_CONFIG.items():
-    #         if isinstance(value, np.ndarray):
-    #             getattr(self.viewer.cam, key)[:] = value
-    #         else:
-    #             setattr(self.viewer.cam, key, value)
+    def viewer_setup(self):
+        assert self.viewer is not None
+        for key, value in DEFAULT_CAMERA_CONFIG.items():
+            if isinstance(value, np.ndarray):
+                getattr(self.viewer.cam, key)[:] = value
+            else:
+                setattr(self.viewer.cam, key, value)

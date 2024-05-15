@@ -781,4 +781,12 @@ class VideoEvalCallback(BaseCallback):
             video.append(pixels)
 
         video = np.stack(video)
-        wandb.log({"results/video": wandb.Video(video, fps=100, format="mp4")})
+        wandb.log(
+            {
+                "results/video": wandb.Video(
+                    video,
+                    fps=self.eval_env.metadata.get("render_fps", 33),
+                    format="mp4",
+                )
+            }
+        )
