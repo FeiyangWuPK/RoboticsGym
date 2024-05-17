@@ -140,7 +140,7 @@ def train_digit_ppo(cfg: DictConfig):
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="PPO 67Hz 50e6",
+        name="PPO 200Hz continuing tuning",
         monitor_gym=cfg.env.name,
         save_code=True,
         group=cfg.wandb.group,
@@ -165,8 +165,8 @@ def train_digit_ppo(cfg: DictConfig):
 
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
-        log_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
+        best_model_save_path=f"logs/{run.project}/{run.name}/{run.start_time}-{run.id}/",  # type: ignore
+        log_path=f"logs/{run.project}/{run.name}/{run.start_time}-{run.id}/",  # type: ignore
         eval_freq=10000,
         n_eval_episodes=5,
         deterministic=False,
@@ -182,10 +182,10 @@ def train_digit_ppo(cfg: DictConfig):
         verbose=cfg.training.verbose,
         learning_rate=cfg.training.learning_rate,
         batch_size=cfg.training.batch_size,
-        tensorboard_log=f"logs/{run.project}/{run.name}/{run.id}/",  # Log to WandB directory # type: ignore
+        tensorboard_log=f"logs/{run.project}/{run.name}/{run.start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
     model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO 67Hz 50e6/xs7vai8s/best_model.zip"
+        "logs/CoRL2024 L2T Digit/PPO 200hz 80e6/bmt42e5t/best_model.zip"
     )
     # Train the model
     model.learn(

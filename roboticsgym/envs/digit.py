@@ -40,7 +40,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 67,
+        "render_fps": 200,
     }
 
     def __init__(
@@ -61,7 +61,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_z_range = healthy_z_range
         self.start_time_stamp = 11000
         self.timestamp = self.start_time_stamp
-        self.frame_skip = 30
+        self.frame_skip = 10
         self.render_fps = round(2000 / self.frame_skip)
 
         self._reset_noise_scale = reset_noise_scale
@@ -94,8 +94,73 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             + "reference_trajectories/digit_state_20240514.csv"
         )
 
-        self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
-        # self.init_qvel = np.zeros_like(self.init_qvel)
+        # self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
+        self.init_qpos = np.array(
+            [
+                0.0000000e00,
+                -0.00000e-02,
+                1.03077151e00,
+                1.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                2.95267333e-01,
+                2.59242753e-03,
+                2.02006095e-01,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                3.63361699e-01,
+                -2.26981220e-02,
+                -3.15269005e-01,
+                -2.18936907e-02,
+                -4.38871903e-02,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                -9.96320522e-03,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                1.67022233e-02,
+                -8.88278765e-02,
+                -1.42914279e-01,
+                1.09086647e00,
+                5.59902988e-04,
+                -1.40124351e-01,
+                -2.95267333e-01,
+                2.59242753e-03,
+                -2.02006095e-01,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                -3.63361699e-01,
+                -2.26981220e-02,
+                3.15269005e-01,
+                -2.18936907e-02,
+                4.38871903e-02,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                -9.96320522e-03,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                0.00000000e00,
+                -1.67022233e-02,
+                8.88278765e-02,
+                1.42914279e-01,
+                -1.09086647e00,
+                -5.59902988e-04,
+                1.40124351e-01,
+            ]
+        )
+        self.init_qvel = np.zeros_like(self.init_qvel)
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
         # Index from README. The toes are actuated by motor A and B.
@@ -297,25 +362,24 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         # print("current and ref pos", qpos[:3], self.ref_qpos[:3])
 
-        # reward = (
-        #     0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
-        # )
-        reward = tracking_reward - ctrl_cost
+        reward = (
+            0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
+        )
+        # reward = tracking_reward - ctrl_cost
 
         observation = self._get_obs()
         terminated = self.terminated
-        # info = {
-        #     "reward_tracking": tracking_reward,
-        #     "reward_quadctrl": -ctrl_cost,
-        #     "reward_alive": healthy_reward,
-        #     "x_position": xy_position_after[0],
-        #     "y_position": xy_position_after[1],
-        #     "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
-        #     "x_velocity": x_velocity,
-        #     "y_velocity": y_velocity,
-        #     "forward_reward": forward_reward,
-        # }
-        info = {}
+        info = {
+            "reward_tracking": tracking_reward,
+            "reward_quadctrl": -ctrl_cost,
+            "reward_alive": healthy_reward,
+            "x_position": xy_position_after[0],
+            "y_position": xy_position_after[1],
+            "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
+            "x_velocity": x_velocity,
+            "y_velocity": y_velocity,
+            "forward_reward": forward_reward,
+        }
 
         if self.render_mode == "human":
             self.render()
