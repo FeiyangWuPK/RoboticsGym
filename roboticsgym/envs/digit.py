@@ -20,7 +20,7 @@ from roboticsgym.utils.transform3d import (
 )
 
 DEFAULT_CAMERA_CONFIG = {
-    "trackbodyid": 2,
+    "trackbodyid": 1,
     "distance": 4.0,
     "lookat": np.array((0.0, 0.0, 2.0)),
     "elevation": -20.0,
@@ -40,7 +40,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 33,
+        "render_fps": 67,
     }
 
     def __init__(
@@ -61,8 +61,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_z_range = healthy_z_range
         self.start_time_stamp = 11000
         self.timestamp = self.start_time_stamp
-        self.frame_skip = 60
-        self.camera_name = "side"
+        self.frame_skip = 30
+        self.render_fps = round(2000 / self.frame_skip)
+
         self._reset_noise_scale = reset_noise_scale
 
         self._exclude_current_positions_from_observation = (
@@ -170,6 +171,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.gear_ratio = self.model.actuator_gear[:, 0]
 
         self.reset_model()
+        self.camera_name = "side"
 
     @property
     def healthy_reward(self):
@@ -315,7 +317,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # }
         info = {}
 
-        if self.render_mode == "human" or self.render_mode == "rgb_array":
+        if self.render_mode == "human":
             self.render()
 
         # Because the reference trajectory is at 1000Hz, while the simulation is 2000Hz,

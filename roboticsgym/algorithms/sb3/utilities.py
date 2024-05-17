@@ -7,8 +7,10 @@ import gymnasium as gym
 
 from stable_baselines3.common import type_aliases
 from stable_baselines3.common.callbacks import BaseCallback, EventCallback
-from stable_baselines3.common.vec_env import VecMonitor
 from stable_baselines3.common.vec_env import (
+    VecMonitor,
+    VecEnvWrapper,
+    SubprocVecEnv,
     DummyVecEnv,
     VecEnv,
     sync_envs_normalization,
@@ -762,6 +764,23 @@ class VideoEvalCallback(BaseCallback):
             # error
             raise ValueError("eval_env must be passed to the callback")
 
+        # Unwrap to retrieve metadata dict
+        # that will be used by gym recorder
+        temp_env = self.eval_env
+        while isinstance(temp_env, VecEnvWrapper):
+            temp_env = temp_env.venv
+
+        if isinstance(temp_env, DummyVecEnv) or isinstance(temp_env, SubprocVecEnv):
+            metadata = temp_env.get_attr("metadata")[0]
+        else:
+            metadata = temp_env.metadata
+
+        self.metadata = metadata
+        print(self.metadata)
+        assert (
+            self.eval_env.render_mode == "rgb_array"
+        ), f"The render_mode must be 'rgb_array', not {self.env.render_mode}"
+
     def _on_step(self) -> bool:
 
         if self.num_timesteps % self.eval_every == 0:
@@ -774,7 +793,7 @@ class VideoEvalCallback(BaseCallback):
         video = []
 
         obs = self.eval_env.reset()
-        for i in range(1000):
+        for i in range(2000):
             action = self.model.predict(obs, deterministic=True)[0]
             obs, _, _, _ = self.eval_env.step(action)
             pixels = self.eval_env.render().transpose(2, 0, 1)
@@ -785,7 +804,7 @@ class VideoEvalCallback(BaseCallback):
             {
                 "results/video": wandb.Video(
                     video,
-                    fps=self.eval_env.metadata.get("render_fps", 33),
+                    fps=self.metadata.get("render_fps", 33),
                     format="mp4",
                 )
             }

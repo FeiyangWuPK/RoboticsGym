@@ -36,11 +36,17 @@ register(
 register(
     id="Digit-v1",
     entry_point="roboticsgym.envs.digit:DigitEnv",
-    max_episode_steps=1000,
+    max_episode_steps=2000,
+)
+
+register(
+    id="Digit-v2",
+    entry_point="roboticsgym.envs.digit_v2:DigitEnv",
+    max_episode_steps=2000,
 )
 
 register(
     id="DigitViz-v1",
     entry_point="roboticsgym.envs.digit_viz:DigitEnv",
-    max_episode_steps=1000,
+    max_episode_steps=2000,
 )

@@ -97,3 +97,39 @@ class DigitTrajectory:
         self.qvel[:, 50:54] = velocity_full[:, 16:20]
 
         self.torque = torque
+
+
+class DigitPackageTrajectory:
+
+    def __init__(self, filepath="digit_package/digit_package_traj.npy"):
+        self.dim_qpos = 61
+        self.dim_qvel = 54
+        self.read_npy(filepath)
+
+    def state(self, t):
+        i = int(t % self.num_data)
+        return (self.qpos[i], self.qvel[i])
+
+    def robot_state(self, t):
+        i = int(t % self.num_data)
+        return (self.robot_qpos[i], self.robot_qvel[i])
+
+    def item_state(self, t):
+        i = int(t % self.num_data)
+        return (self.item_qpos[i], self.item_qvel[i])
+
+    def sample(self):
+        i = random.randrange(self.num_data)
+        return (self.time[i], self.qpos[i], self.qvel[i])
+
+    def read_npy(self, filepath):
+
+        # Read in the recorded data.
+        digit_state = np.load(filepath)
+        # Extract the position, velocity, and torque.
+        self.qpos = digit_state[:, 0:103]
+        self.qvel = digit_state[:, 103:]
+        self.robot_qpos = digit_state[:, 0 : self.dim_qpos]
+        self.item_qpos = digit_state[:, self.dim_qpos : 103]
+        self.robot_qvel = digit_state[:, 103 : 103 + self.dim_qvel]
+        self.item_qvel = digit_state[:, 103 + self.dim_qvel :]

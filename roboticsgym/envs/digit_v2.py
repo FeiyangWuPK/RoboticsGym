@@ -20,7 +20,7 @@ from roboticsgym.utils.transform3d import (
 )
 
 DEFAULT_CAMERA_CONFIG = {
-    "trackbodyid": 1,
+    "trackbodyid": 2,
     "distance": 4.0,
     "lookat": np.array((0.0, 0.0, 2.0)),
     "elevation": -20.0,
@@ -40,7 +40,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 33,
+        "render_fps": 200,
     }
 
     def __init__(
@@ -61,9 +61,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_z_range = healthy_z_range
         self.start_time_stamp = 11000
         self.timestamp = self.start_time_stamp
-        self.camera_name = "side"  # so that it tracks the robot
-        self.frame_skip = 60
+
+        self.frame_skip = 10
         self.domain_randomization_scale = 0.1
+        self.render_fps = round(2000 / self.frame_skip)
 
         self._reset_noise_scale = reset_noise_scale
 
@@ -90,7 +91,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
             self.frame_skip,
             observation_space=observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
@@ -102,7 +103,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.ref_trajectory = DigitTrajectory(
             os.getcwd()
             + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_20240422.csv"
+            + "reference_trajectories/digit_state_20240514.csv"
         )
 
         self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
@@ -182,6 +183,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.gear_ratio = self.model.actuator_gear[:, 0]
 
         self.reset_model()
+        self.camera_name = "side"  # so that it tracks the robot
 
     @property
     def healthy_reward(self):
@@ -241,7 +243,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         )
 
         student_obs = self.apply_randomization(teacher_state)
-        return {"state": teacher_state, "obs": student_obs}
+        return {"state": teacher_state, "observation": student_obs}
 
     def apply_randomization(self, obs: np.ndarray) -> np.ndarray:
         if self.domain_randomization_scale == 0:
