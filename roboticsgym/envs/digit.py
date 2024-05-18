@@ -94,72 +94,72 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             + "reference_trajectories/digit_state_20240514.csv"
         )
 
-        # self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
-        self.init_qpos = np.array(
-            [
-                0.0000000e00,
-                -0.00000e-02,
-                1.03077151e00,
-                1.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                2.95267333e-01,
-                2.59242753e-03,
-                2.02006095e-01,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                3.63361699e-01,
-                -2.26981220e-02,
-                -3.15269005e-01,
-                -2.18936907e-02,
-                -4.38871903e-02,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                -9.96320522e-03,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                1.67022233e-02,
-                -8.88278765e-02,
-                -1.42914279e-01,
-                1.09086647e00,
-                5.59902988e-04,
-                -1.40124351e-01,
-                -2.95267333e-01,
-                2.59242753e-03,
-                -2.02006095e-01,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                -3.63361699e-01,
-                -2.26981220e-02,
-                3.15269005e-01,
-                -2.18936907e-02,
-                4.38871903e-02,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                -9.96320522e-03,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                0.00000000e00,
-                -1.67022233e-02,
-                8.88278765e-02,
-                1.42914279e-01,
-                -1.09086647e00,
-                -5.59902988e-04,
-                1.40124351e-01,
-            ]
-        )
+        self.init_qpos, self.init_qvel = self.ref_trajectory.state(self.timestamp)
+        # self.init_qpos = np.array(
+        #     [
+        #         0.0000000e00,
+        #         -0.00000e-02,
+        #         1.03077151e00,
+        #         1.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         2.95267333e-01,
+        #         2.59242753e-03,
+        #         2.02006095e-01,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         3.63361699e-01,
+        #         -2.26981220e-02,
+        #         -3.15269005e-01,
+        #         -2.18936907e-02,
+        #         -4.38871903e-02,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -9.96320522e-03,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         1.67022233e-02,
+        #         -8.88278765e-02,
+        #         -1.42914279e-01,
+        #         1.09086647e00,
+        #         5.59902988e-04,
+        #         -1.40124351e-01,
+        #         -2.95267333e-01,
+        #         2.59242753e-03,
+        #         -2.02006095e-01,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -3.63361699e-01,
+        #         -2.26981220e-02,
+        #         3.15269005e-01,
+        #         -2.18936907e-02,
+        #         4.38871903e-02,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -9.96320522e-03,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -1.67022233e-02,
+        #         8.88278765e-02,
+        #         1.42914279e-01,
+        #         -1.09086647e00,
+        #         -5.59902988e-04,
+        #         1.40124351e-01,
+        #     ]
+        # )
         self.init_qvel = np.zeros_like(self.init_qvel)
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
 
@@ -321,9 +321,25 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             # See https://github.com/openai/gym/issues/1541
             mj_rnePostConstraint(self.model, self.data)
 
+    def compute_torque(self, target_position, target_velocity):
+        motor_positions = self.data.actuator_length
+        current_position = motor_positions
+        current_position = np.divide(motor_positions, self.gear_ratio)
+        motor_velocities = self.data.actuator_velocity
+        current_velocity = motor_velocities
+        current_velocity = np.divide(motor_velocities, self.gear_ratio)
+
+        # Compute torque using PD gain
+        torque = self.kp * (target_position - current_position) + self.kd * (
+            target_velocity - current_velocity
+        )
+        torque = np.divide(torque, self.gear_ratio)
+        return torque
+
     def step(self, action):
         # Get reference qpos and qvel
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
+        self.ref_torque = self.ref_trajectory.action(self.timestamp)
 
         # Compute xy position before and after
         xy_position_before = mass_center(self.model, self.data)
@@ -348,7 +364,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         healthy_reward = self.healthy_reward
         tracking_reward = (
             np.exp(
-                -10 * np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index])
+                -30 * np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index])
             )
             # root position tracking
             + np.exp(-10 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3]))
@@ -358,15 +374,24 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             + np.exp(-10 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3]))
             # root angular vel tracking
             + np.exp(-10 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6]))
+            + np.exp(
+                -10
+                * np.linalg.norm(
+                    self.ref_torque - self.compute_torque(pd_target, np.zeros(20))
+                )
+            )
         )
 
+        # print("ref torque", self.ref_torque)
+        # print("computed torque", self.compute_torque(pd_target, np.zeros(20)))
         # print("current and ref pos", qpos[:3], self.ref_qpos[:3])
 
-        reward = (
-            0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
-        )
+        # reward = (
+        #     0.1 * forward_reward + 0.1 * healthy_reward + tracking_reward - ctrl_cost
+        # )
         # reward = tracking_reward - ctrl_cost
-
+        # reward = forward_reward + healthy_reward - ctrl_cost
+        reward = tracking_reward
         observation = self._get_obs()
         terminated = self.terminated
         info = {

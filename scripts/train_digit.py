@@ -57,6 +57,7 @@ from roboticsgym.algorithms.sb3.utilities import (
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
+import datetime
 
 
 @hydra.main(config_path="configs", config_name="train_digit", version_base=None)
@@ -89,17 +90,19 @@ def train_digit_sac(cfg: DictConfig):
         vec_env_cls=SubprocVecEnv,
     )
 
+    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
+
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         log_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         eval_freq=10000,
+        callback_on_new_best=video_callback,
         n_eval_episodes=5,
         deterministic=False,
         render=False,
         verbose=0,
     )
-    video_callback = VideoEvalCallback(eval_every=500000, eval_env=eval_env)
     wandb_callback = WandbCallback()
 
     # Create the model
@@ -140,12 +143,17 @@ def train_digit_ppo(cfg: DictConfig):
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="PPO 200Hz continuing tuning",
+        name="Ground plane lifted 0.73m with action penalty",
         monitor_gym=cfg.env.name,
         save_code=True,
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
+        notes=" ",
+    )
+    # Convert unix time to human readable format
+    start_time = datetime.datetime.fromtimestamp(run.start_time).strftime(
+        "%Y-%m-%d-%H-%M-%S"
     )
 
     # Create the environment
@@ -163,17 +171,18 @@ def train_digit_ppo(cfg: DictConfig):
         vec_env_cls=SubprocVecEnv,
     )
 
+    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=f"logs/{run.project}/{run.name}/{run.start_time}-{run.id}/",  # type: ignore
-        log_path=f"logs/{run.project}/{run.name}/{run.start_time}-{run.id}/",  # type: ignore
+        best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
+        log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
         eval_freq=10000,
         n_eval_episodes=5,
-        deterministic=False,
+        callback_on_new_best=video_callback,
+        deterministic=True,
         render=True,
         verbose=1,
     )
-    video_callback = VideoEvalCallback(eval_every=500000, eval_env=eval_env)
     wandb_callback = WandbCallback()
 
     model = PPO(
@@ -182,17 +191,19 @@ def train_digit_ppo(cfg: DictConfig):
         verbose=cfg.training.verbose,
         learning_rate=cfg.training.learning_rate,
         batch_size=cfg.training.batch_size,
-        tensorboard_log=f"logs/{run.project}/{run.name}/{run.start_time}-{run.id}/",  # Log to WandB directory # type: ignore
+        tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
+
     model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO 200hz 80e6/bmt42e5t/best_model.zip"
+        "logs/CoRL2024 L2T Digit/Ground plane lifted 0.73m/2024-05-17-20-59-21-aremyvyi/best_model.zip"
     )
+
     # Train the model
     model.learn(
-        total_timesteps=10000000,
+        total_timesteps=int(10e6),
         progress_bar=True,
         log_interval=100,
-        callback=CallbackList([eval_callback, video_callback, wandb_callback]),
+        callback=CallbackList([eval_callback, wandb_callback]),
     )
 
     run.finish()  # type: ignore

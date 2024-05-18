@@ -2,6 +2,11 @@ from gymnasium.envs.registration import register
 import gymnasium as gym
 from gymnasium.utils.env_checker import check_env
 
+register(
+    id="CassieViz-v1",
+    entry_point="roboticsgym.envs.cassie_viz:CassieEnv",
+    max_episode_steps=1000,
+)
 
 register(
     id="CassieMirror-v0",

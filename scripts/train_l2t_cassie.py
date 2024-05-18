@@ -1292,14 +1292,14 @@ def visualize_best_student():
 
     # Init model
     model = L2TRL.load(
-        "logs/CoRL2024 Guided Learning/Cassie Imitation Learning L2T-2024-04-24-23-15-07/student/best_model.zip"
+        "logs/CoRL2024 Guided Learning/Cassie Imitation Learning L2T-2024-05-07-12-52-55/teacher/best_model.zip"
     )
     model.set_parameters(
-        "logs/CoRL2024 Guided Learning/Cassie Imitation Learning L2T-2024-04-24-23-15-07/student/best_model.zip"
+        "logs/CoRL2024 Guided Learning/Cassie Imitation Learning L2T-2024-05-07-12-52-55/teacher/best_model.zip"
     )
 
     # Evaluation
-    mean_student_reward, _ = evaluate_student_policy(model, eval_env, n_eval_episodes=3)
+    mean_student_reward, _ = evaluate_student_policy(model, eval_env, n_eval_episodes=1)
 
     # Finish wandb run
 

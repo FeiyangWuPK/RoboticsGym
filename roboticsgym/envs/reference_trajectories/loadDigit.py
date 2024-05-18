@@ -15,7 +15,7 @@ class DigitTrajectory:
 
     def action(self, t):
         i = int(t % self.num_data)
-        return (self.mpos[i], self.mvel[i], self.torque[i])
+        return self.torque[i]
 
     def sample(self):
         i = random.randrange(self.num_data)
