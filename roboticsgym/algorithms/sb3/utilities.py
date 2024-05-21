@@ -777,9 +777,9 @@ class VideoEvalCallback(BaseCallback):
 
         self.metadata = metadata
         print(self.metadata)
-        assert (
-            self.eval_env.render_mode == "rgb_array"
-        ), f"The render_mode must be 'rgb_array', not {self.env.render_mode}"
+        # assert (
+        #     self.eval_env.render_mode == "rgb_array"
+        # ), f"The render_mode must be 'rgb_array', not {self.env.render_mode}"
 
     def _on_step(self) -> bool:
 

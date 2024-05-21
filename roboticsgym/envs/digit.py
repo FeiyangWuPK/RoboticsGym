@@ -7,6 +7,8 @@ import mujoco
 from mujoco._functions import mj_rnePostConstraint
 from mujoco._functions import mj_step
 
+from jax import numpy as jnp
+
 from roboticsgym.envs.reference_trajectories.loadDigit import DigitTrajectory
 
 from roboticsgym.utils.transform3d import (
@@ -18,6 +20,8 @@ from roboticsgym.utils.transform3d import (
     quat2yaw,
     euler2mat,
 )
+
+frameskip_global = 10
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
@@ -40,7 +44,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 200,
+        "render_fps": round(2000 / frameskip_global),
     }
 
     def __init__(
@@ -59,9 +63,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._healthy_reward = healthy_reward
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
-        self.start_time_stamp = 11000
+        self.start_time_stamp = 14000
         self.timestamp = self.start_time_stamp
-        self.frame_skip = 10
+        self.frame_skip = frameskip_global
         self.render_fps = round(2000 / self.frame_skip)
 
         self._reset_noise_scale = reset_noise_scale
@@ -73,7 +77,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         observation_space = Box(
             low=-np.inf,
             high=np.inf,
-            shape=(106,),
+            shape=(1152,),
             dtype=np.float64,
         )
 
@@ -160,8 +164,14 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         #         1.40124351e-01,
         #     ]
         # )
-        self.init_qvel = np.zeros_like(self.init_qvel)
+        # self.init_qvel = np.zeros_like(self.init_qvel)
         self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
+        self.next_ref_qpos, self.next_ref_qvel = self.ref_trajectory.state(
+            self.timestamp + int(self.frame_skip / 2)
+        )
+
+        # will be used in PD
+        self.target_velocity = np.zeros(20)
 
         # Index from README. The toes are actuated by motor A and B.
         self.p_index = [
@@ -208,31 +218,81 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             52,
             53,
         ]
-        self.kp = np.array(
+        self.kp = (
+            np.array(
+                [
+                    1400,
+                    1000,
+                    1167,
+                    1300,
+                    533,
+                    533,
+                    500,
+                    500,
+                    500,
+                    500,
+                    1400,
+                    1000,
+                    1167,
+                    1300,
+                    533,
+                    533,
+                    500,
+                    500,
+                    500,
+                    500,
+                ]
+            )
+            * 0.5
+        )
+
+        self.kd = np.array([5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5])
+
+        self.recorded_qpos_index = np.array(
             [
-                1400,
-                1000,
-                1167,
-                1300,
-                533,
-                533,
-                500,
-                500,
-                500,
-                500,
-                1400,
-                1000,
-                1167,
-                1300,
-                533,
-                533,
-                500,
-                500,
-                500,
-                500,
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                14,
+                15,
+                16,
+                17,
+                18,
+                23,
+                28,
+                29,
+                30,
+                31,
+                32,
+                33,
+                34,
+                35,
+                36,
+                37,
+                41,
+                42,
+                43,
+                44,
+                45,
+                50,
+                55,
+                56,
+                57,
+                58,
+                59,
+                60,
             ]
         )
-        self.kd = np.array([5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5])
+
+        self.upper_body_index = np.array([30, 31, 32, 33, 57, 58, 59, 60])
         self.gear_ratio = self.model.actuator_gear[:, 0]
 
         self.reset_model()
@@ -263,17 +323,22 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         return terminated
 
     def _get_obs(self):
-        qpos = self.data.qpos.flat.copy()
-        qvel = self.data.qvel.flat.copy()
+        qpos = self.data.qpos.ravel().copy()
+        qvel = self.data.qvel.ravel().copy()
+        # print(qpos.shape, qvel.shape)
 
-        position = qpos[self.p_index]
-        velocity = qvel[self.v_index]
+        joint_position = qpos[self.p_index]
+        joint_velocity = qvel[self.v_index]
 
-        # com_inertia = self.data.cinert.flat.copy()
-        # com_velocity = self.data.cvel.flat.copy()
+        com_inertia = self.data.cinert.flat.copy()
+        com_velocity = self.data.cvel.flat.copy()
 
-        # actuator_forces = self.data.qfrc_actuator.flat.copy()
-        # external_contact_forces = self.data.cfrc_ext.flat.copy()
+        # print(com_inertia.shape, com_velocity.shape)
+
+        actuator_forces = self.data.qfrc_actuator.flat.copy()
+        external_contact_forces = self.data.cfrc_ext.flat.copy()
+
+        # print(actuator_forces.shape, external_contact_forces.shape)
 
         self.root_quat = qpos[3:7]
         roll, pitch, yaw = quaternion2euler(self.root_quat)
@@ -283,33 +348,33 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # eular_angles = np.array([roll, pitch, yaw])
         return np.concatenate(
             (
+                com_inertia,
+                com_velocity,
+                actuator_forces,
+                external_contact_forces,
                 self.root_lin_vel,
                 self.root_ang_vel,
-                qpos[:7],
-                position,
-                velocity,
-                self.ref_qpos[:7],
-                self.ref_qvel[:6],
-                self.ref_qpos[self.p_index],
-                self.ref_qvel[self.v_index],
+                qpos,
+                qvel,
+                self.next_ref_qpos[:7],
+                self.next_ref_qvel[:6],
+                self.next_ref_qpos[self.p_index],
+                self.next_ref_qvel[self.v_index],
             )
         )
 
     # Basically PD control
     def _step_mujoco_simulation(self, target_position: np.array, n_frames: int) -> None:
-        target_velocity = np.zeros(20)
         for _ in range(n_frames):
-
             motor_positions = self.data.actuator_length
             current_position = motor_positions
             current_position = np.divide(motor_positions, self.gear_ratio)
             motor_velocities = self.data.actuator_velocity
             current_velocity = motor_velocities
             current_velocity = np.divide(motor_velocities, self.gear_ratio)
-
             # Compute torque using PD gain
             torque = self.kp * (target_position - current_position) + self.kd * (
-                target_velocity - current_velocity
+                self.target_velocity - current_velocity
             )
             torque = np.divide(torque, self.gear_ratio)
             self.data.ctrl[:] = torque.copy()
@@ -345,7 +410,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         xy_position_before = mass_center(self.model, self.data)
 
         # Create PD target
-        pd_target = action + self.ref_qpos[self.p_index]
+        self.next_ref_qpos, self.next_ref_qvel = self.ref_trajectory.state(
+            self.timestamp + int(self.frame_skip / 2)
+        )
+        pd_target = action + self.next_ref_qpos[self.p_index]
 
         self._step_mujoco_simulation(pd_target, self.frame_skip)
 
@@ -355,29 +423,46 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         x_velocity, y_velocity = xy_velocity
 
         # Compute reward using current qpos and qvel
-        qpos = self.data.qpos.copy()
-        qvel = self.data.qvel.copy()
+        qpos = self.data.qpos.ravel().copy()
+        qvel = self.data.qvel.ravel().copy()
 
         ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
         forward_reward = self._forward_reward_weight * x_velocity
         healthy_reward = self.healthy_reward
+
         tracking_reward = (
-            np.exp(
-                -30 * np.linalg.norm(self.ref_qpos[self.p_index] - qpos[self.p_index])
-            )
             # root position tracking
-            + np.exp(-10 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3]))
+            np.exp(-10 * np.linalg.norm(self.ref_qpos[:3] - qpos[:3], ord=np.inf))
             # root rotation tracking
-            + np.exp(-10 * np.linalg.norm(self.ref_qpos[3:7] - qpos[3:7]))
+            + np.exp(-10 * np.linalg.norm(self.ref_qpos[3:7] - qpos[3:7], ord=np.inf))
             # root linear vel tracking
-            + np.exp(-10 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3]))
+            + np.exp(-10 * np.linalg.norm(self.ref_qvel[:3] - qvel[:3], ord=np.inf))
             # root angular vel tracking
-            + np.exp(-10 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6]))
+            + np.exp(-10 * np.linalg.norm(self.ref_qvel[3:6] - qvel[3:6], ord=np.inf))
+            # Overall qpos tracking
+            + np.exp(
+                -30
+                * np.linalg.norm(
+                    self.ref_qpos[self.recorded_qpos_index]
+                    - qpos[self.recorded_qpos_index]
+                )
+            )
+            # Penalty for large difference in foot locations
+            + np.exp(
+                -30
+                * np.linalg.norm(
+                    self.ref_qpos[[18, 23, 28, 29, 45, 50, 55, 56]]
+                    - qpos[[18, 23, 28, 29, 45, 50, 55, 56]],
+                    ord=np.inf,
+                )
+            )
+            # Upper body keeping straight
             + np.exp(
                 -10
                 * np.linalg.norm(
-                    self.ref_torque - self.compute_torque(pd_target, np.zeros(20))
+                    self.init_qpos[self.upper_body_index] - qpos[self.upper_body_index],
+                    ord=np.inf,
                 )
             )
         )
@@ -423,6 +508,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.set_state(qpos, qvel)
 
         self.timestamp = self.start_time_stamp
+        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
+        self.next_ref_qpos, self.next_ref_qvel = self.ref_trajectory.state(
+            self.timestamp + int(self.frame_skip / 2)
+        )
         observation = self._get_obs()
 
         return observation

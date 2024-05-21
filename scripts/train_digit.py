@@ -140,10 +140,14 @@ def train_digit_ppo(cfg: DictConfig):
     """
     Train Digit with PPO.
     """
+    import warnings
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="Ground plane lifted 0.73m with action penalty",
+        name="PPO 200Hz aug obs",
         monitor_gym=cfg.env.name,
         save_code=True,
         group=cfg.wandb.group,
@@ -159,7 +163,7 @@ def train_digit_ppo(cfg: DictConfig):
     # Create the environment
     env = make_vec_env(
         cfg.env.name,
-        n_envs=cfg.env.n_envs,
+        n_envs=32,  # cfg.env.n_envs,
         seed=cfg.env.seed,
         vec_env_cls=SubprocVecEnv,
         # env_kwargs={"render_mode": "human"},
@@ -169,9 +173,11 @@ def train_digit_ppo(cfg: DictConfig):
         n_envs=1,
         seed=cfg.env.seed,
         vec_env_cls=SubprocVecEnv,
+        # env_kwargs={"render_mode": "human"},
     )
 
-    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
+    video_callback = VideoEvalCallback(eval_every=10000, eval_env=eval_env)
+
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
@@ -183,6 +189,7 @@ def train_digit_ppo(cfg: DictConfig):
         render=True,
         verbose=1,
     )
+
     wandb_callback = WandbCallback()
 
     model = PPO(
@@ -194,15 +201,17 @@ def train_digit_ppo(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
 
-    model.set_parameters(
-        "logs/CoRL2024 L2T Digit/Ground plane lifted 0.73m/2024-05-17-20-59-21-aremyvyi/best_model.zip"
-    )
+    # model.set_parameters(
+    #     "logs/CoRL2024 L2T Digit/PPO 200Hz change obs/2024-05-21-07-48-53-5yg3bcfd/best_model.zip"
+    # )
+
+    # evaluate_policy(model, eval_env, n_eval_episodes=5, render=True)
 
     # Train the model
     model.learn(
-        total_timesteps=int(10e6),
+        total_timesteps=int(60e6),
         progress_bar=True,
-        log_interval=100,
+        log_interval=1,
         callback=CallbackList([eval_callback, wandb_callback]),
     )
 

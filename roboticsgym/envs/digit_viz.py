@@ -358,7 +358,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         qvel = self.init_qvel
         self.set_state(qpos, qvel)
 
-        self.timestamp = 11000
+        self.timestamp = 14000
         observation = self._get_obs()
 
         # self.data.userdata = np.zeros(20)  # Use userdata as target position.
