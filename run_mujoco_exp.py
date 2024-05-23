@@ -7,31 +7,28 @@ from scripts.train_l2t_mujoco import (
 )
 
 
-def mujoco_rl_exp():
+def mujoco_rl():
     for env_id in [
-        # "Ant-v4",
-        # "HalfCheetah-v4",
-        # "Hopper-v4",
-        "Walker2d-v4",
-        # "Humanoid-v4",
+        "Humanoid-v4",
     ]:
         run_mujoco_rl(env_id)
-        run_mujoco_second_stage(env_id)
+        # run_mujoco_second_stage(env_id)
 
 
-def mujoco_second_stage_exp():
-    for env_id in [
-        # "Ant-v4",
-        # "HalfCheetah-v4",
-        "Hopper-v4",
-        # "Walker2d-v4",
-        # "Humanoid-v4",
-    ]:
-        run_mujoco_second_stage(env_id)
+# def mujoco_second_stage_exp():
+#     for env_id in [
+#         "Ant-v4",
+#         "HalfCheetah-v4",
+#         "Hopper-v4",
+#         "Walker2d-v4",
+#         "Humanoid-v4",
+#     ]:
+#         run_mujoco_second_stage(env_id)
 
 
 if __name__ == "__main__":
     # mujoco_second_stage_exp()
-    halfcheetah_ablation()
+    # halfcheetah_ablation()
     # train_hopper_rl()
     # run_hopper_second_stage()
+    mujoco_rl()

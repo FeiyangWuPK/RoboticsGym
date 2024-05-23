@@ -202,9 +202,9 @@ def train_digit_ppo(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
 
-    model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO 200Hz new reward/2024-05-22-20-12-39-bhhaqgoc/best_model.zip"
-    )
+    # model.set_parameters(
+    #     "logs/CoRL2024 L2T Digit/PPO 200Hz new reward/2024-05-22-20-12-39-bhhaqgoc/best_model.zip"
+    # )
 
     # evaluate_policy(model, eval_env, n_eval_episodes=5, render=True)
 
