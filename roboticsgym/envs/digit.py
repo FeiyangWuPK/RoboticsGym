@@ -359,10 +359,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
     def _step_mujoco_simulation(self, target_position: np.array, n_frames: int) -> None:
         for _ in range(n_frames):
             motor_positions = self.data.actuator_length
-            current_position = motor_positions
+            # current_position = motor_positions
             current_position = np.divide(motor_positions, self.gear_ratio)
             motor_velocities = self.data.actuator_velocity
-            current_velocity = motor_velocities
+            # current_velocity = motor_velocities
             current_velocity = np.divide(motor_velocities, self.gear_ratio)
             # Compute torque using PD gain
             torque = self.kp * (target_position - current_position) + self.kd * (
@@ -424,6 +424,12 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # Compute reward using current qpos and qvel after the simulation
         qpos = self.data.qpos.ravel().copy()
         qvel = self.data.qvel.ravel().copy()
+        # print(
+        #     "qpos",
+        #     qpos[self.p_index],
+        #     "ref qpos",
+        #     self.ref_qpos[self.p_index],
+        # )
 
         ctrl_cost = 0.1 * np.linalg.norm(action, ord=2)
 
@@ -462,14 +468,24 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             )
         )
 
-        foot_pos_tracking_rwd = np.exp(
-            -30
-            * np.linalg.norm(
-                self.ref_qpos[[18, 23, 28, 29, 45, 50, 55, 56]]
-                - qpos[[18, 23, 28, 29, 45, 50, 55, 56]],
-            )
+        foot_pos_tracking_rwd = -10 * np.linalg.norm(
+            self.ref_qpos[
+                [
+                    18,
+                    23,
+                    45,
+                    50,
+                ]
+            ]
+            - qpos[
+                [
+                    18,
+                    23,
+                    45,
+                    50,
+                ]
+            ],
         )
-
         upper_body_tracking_rwd = np.exp(
             -10
             * np.linalg.norm(

@@ -8,7 +8,7 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 import numpy as np
-from cfg.base.base_config import BaseConfig, ConfigObj
+from roboticsgym.envs.cfg.base.base_config import BaseConfig, ConfigObj
 
 
 class DigitEnvConfig(BaseConfig):

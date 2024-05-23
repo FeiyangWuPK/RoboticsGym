@@ -147,14 +147,14 @@ def train_digit_ppo(cfg: DictConfig):
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="PPO 200Hz new reward",
+        name="PPO 200Hz new env",
         monitor_gym=cfg.env.name,
         save_code=True,
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
         # mode="offline",
-        notes=" ",
+        notes="0.3 scaled kp",
     )
     # Convert unix time to human readable format
     start_time = datetime.datetime.fromtimestamp(run.start_time).strftime(
@@ -186,7 +186,7 @@ def train_digit_ppo(cfg: DictConfig):
         eval_freq=20000,
         n_eval_episodes=3,
         callback_on_new_best=video_callback,
-        deterministic=False,
+        deterministic=True,
         render=True,
         verbose=1,
     )
@@ -202,15 +202,15 @@ def train_digit_ppo(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
 
-    model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO 200Hz new reward/2024-05-22-20-12-39-bhhaqgoc/best_model.zip"
-    )
+    # model.set_parameters(
+    #     "logs/CoRL2024 L2T Digit/PPO 200Hz new reward/2024-05-23-10-02-36-fqe3qrto/best_model.zip"
+    # )
 
     # evaluate_policy(model, eval_env, n_eval_episodes=5, render=True)
 
     # Train the model
     model.learn(
-        total_timesteps=int(4e7),
+        total_timesteps=int(1e7),
         progress_bar=True,
         log_interval=10,
         callback=CallbackList([eval_callback, wandb_callback]),
@@ -233,12 +233,12 @@ def visualize_expert_trajectory(cfg: DictConfig):
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
-        mode="offline",
+        # mode="offline",
     )
 
     # Create the environment
     env = make_vec_env(
-        "DigitViz-v1",
+        "DigitFKHY-v1",
         n_envs=1,
         seed=cfg.env.seed,
         # env_kwargs={"render_mode": "human"},
@@ -246,22 +246,22 @@ def visualize_expert_trajectory(cfg: DictConfig):
     )
 
     eval_env = make_vec_env(
-        "DigitViz-v1",
+        "DigitFKHY-v1",
         n_envs=1,
         seed=cfg.env.seed,
-        env_kwargs={"render_mode": "rgb_array"},
+        env_kwargs={"render_mode": "human"},
         vec_env_cls=SubprocVecEnv,
     )
 
-    video_env = VecVideoRecorder(
-        eval_env,
-        "./videos/",
-        record_video_trigger=lambda x: x % 1 == 0,
-        video_length=2000,
-    )
+    # video_env = VecVideoRecorder(
+    #     eval_env,
+    #     "./videos/",
+    #     record_video_trigger=lambda x: x % 1 == 0,
+    #     video_length=2000,
+    # )
 
     eval_callback = EvalCallback(
-        video_env,
+        eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         log_path=f"logs/{run.project}/{run.name}/{run.id}/",  # type: ignore
         eval_freq=1,

@@ -1,5 +1,5 @@
 env:
-  name: Digit-v1
+  name: DigitFKHY-v1
   n_envs: 24
   seed: 42
 

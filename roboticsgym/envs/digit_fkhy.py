@@ -19,7 +19,7 @@ from roboticsgym.envs.cfg.digit_env_config import DigitEnvConfig
 
 
 DEFAULT_CAMERA_CONFIG = {
-    "trackbodyid": 1,
+    "trackbodyid": 2,
     "distance": 5.0,
     "lookat": np.array((0.0, 0.0, 1.0)),
     "elevation": -20.0,
@@ -181,20 +181,25 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         "render_fps": 200,
     }
 
-    def __init__(self, cfg=DigitEnvConfig(), log_dir=""):
+    def __init__(
+        self,
+        cfg=DigitEnvConfig(),
+        log_dir="",
+        **kwargs,
+    ):
 
         self.frame_skip = 10
         dir_path, name = os.path.split(os.path.abspath(__file__))
 
         MujocoEnv.__init__(
             self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit.xml",
+            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
             self.frame_skip,
             observation_space=Box(
                 low=-np.inf, high=np.inf, shape=(106,), dtype=np.float64
             ),
             default_camera_config=DEFAULT_CAMERA_CONFIG,
-            render_mode="human",
+            **kwargs,
         )
 
         self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
@@ -283,7 +288,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.ref_trajectory = DigitTrajectory(
             os.getcwd()
             + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_20240422.csv"
+            + "reference_trajectories/digit_state_20240514.csv"
         )
         # self.ref_traj_dir = os.path.join(
         #     self.home_path, "logs/record_vel_track/crocoddyl_ref_traj_taichi_3s"
@@ -301,10 +306,11 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # self.ref_a_pos = self.ref_qpos[:, self.p_index]  # actuation reference position
         # self.ref_a_vel = self.ref_qvel[:, self.v_index]
         # # self.ref_a_acc = self.ref_qacc[:, self.v_index]
-        self.ref_qpos = self.ref_trajectory.qpos[11000:]
-        self.ref_qvel = self.ref_trajectory.qvel[11000:]
-        self.ref_a_pos = self.ref_qpos[11000:, self.p_index]
-        self.ref_a_vel = self.ref_qvel[11000:, self.v_index]
+        self.ref_qpos = self.ref_trajectory.qpos[14000:]
+        self.ref_qvel = self.ref_trajectory.qvel[14000:]
+        # print(self.ref_qpos.shape)
+        self.ref_a_pos = self.ref_qpos[14000:, self.p_index]
+        self.ref_a_vel = self.ref_qvel[14000:, self.v_index]
         self.ref_motion_len = self.ref_qpos.shape[0]
 
         self.ref_data = np.concatenate([self.ref_qpos, self.ref_qvel], axis=1)
@@ -364,8 +370,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self.nominal_qvel = None
         self.nominal_qpos = None
         self.nominal_motor_offset = None
-        self.model = None
-        self.data = None
+        # self.model = None
+        # self.data = None
         self._mbc = None
 
         self.curr_terrain_level = None
@@ -378,13 +384,10 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "right-foot",
             "left-foot",
         )
-        self.nominal_qvel = self.data.qvel.ravel().copy()
-        self.nominal_qpos = self.model.keyframe("standing").qpos
-        self.nominal_motor_offset = self.nominal_qpos[
-            self._interface.get_motor_qposadr()
-        ]
+        # self.nominal_qvel = self.data.qvel.ravel().copy()
+        # self.nominal_qpos = self.model.keyframe("standing").qpos
 
-        self._record_fps = 15
+        self._record_fps = round(2000 / self.frame_skip)
 
         # setup viewer
         self.frames = []  # this only be cleaned at the save_video function
@@ -429,21 +432,6 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             if frame is not None:
                 self.frames.append(frame)
 
-        # log data at TIMEOUT
-        if StepType.TIMEOUT:
-            # Writing to CSV file
-
-            np.savetxt(
-                self.log_dir,
-                np.column_stack((self.log_time, self.log_ref_data)),
-                delimiter=",",
-                fmt="%s",
-                comments="",
-            )
-            # print(f'Data has been stored in {self.log_dir}')
-
-        # second return is for episodic info
-        # not sure if copy is needed but to make sure...
         return self.get_eps_info()
 
     def step(self, action):
@@ -457,8 +445,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         hat_target_pos = self.ref_a_pos[self._step_cnt]
         # hat_target_vel = self.ref_a_vel[self._step_cnt]
         # hat_target_acc = self.ref_a_acc[self._step_cnt]
+        # self.set_state(self.ref_qpos[self._step_cnt], self.ref_qvel[self._step_cnt])
 
-        adjusted_target_pos = hat_target_pos + np.concatenate((action[:6], action[6:]))
+        adjusted_target_pos = hat_target_pos + action
 
         start = time.time()
         # control step
@@ -467,7 +456,9 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
 
             if self.cfg.domain_randomization.is_true:
                 self.action_delay_time = int(
-                    np.random.uniform(0, self.cfg.domain_randomization.action_delay, 1)
+                    np.random.uniform(0, self.cfg.domain_randomization.action_delay, 1)[
+                        0
+                    ]
                     / self.cfg.env.sim_dt
                 )
             self._pd_control(target_joint, np.zeros_like(target_joint))
@@ -494,7 +485,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         #     print("the simulation looks slower than it actually is")
         if (end_time - st_time) < self.cfg.control.control_dt:
             time.sleep(self.cfg.control.control_dt - (end_time - st_time))
-
+        if self.render_mode == "human":
+            self.render()
         return (
             observation,
             tot_reward,
@@ -813,7 +805,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
                         # self.joint_vel_hist_obs,
                     ]
                 )
-                .astype(np.float32)
+                .astype(np.float64)
                 .flatten()
             )
         else:
@@ -835,7 +827,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
                         # self.joint_vel_hist_obs,
                     ]
                 )
-                .astype(np.float32)
+                .astype(np.float64)
                 .flatten()
             )
 
@@ -860,7 +852,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
                     # self.kd,
                 ]
             )
-            .astype(np.float32)
+            .astype(np.float64)
             .flatten()
         )
 
@@ -950,37 +942,44 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             self._viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
         self.viewer_setup()
 
+    # def viewer_setup(self):
+    #     self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+    #     self._viewer.cam.fixedcamid = 0
+    #     self._viewer.cam.distance = self.model.stat.extent * 1.5
+    #     self._viewer.cam.lookat[2] = 0.0
+    #     self._viewer.cam.lookat[0] = 0
+    #     self._viewer.cam.lookat[1] = 0.0
+    #     self._viewer.cam.azimuth = 180
+    #     self._viewer.cam.distance = 5
+    #     self._viewer.cam.elevation = -10
+    #     self._viewer.vopt.geomgroup[0] = 1
+    #     self._viewer._render_every_frame = True
+    #     # self.viewer._run_speed *= 20
+    #     self._viewer._contacts = True
+    #     self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = (
+    #         self._viewer._contacts
+    #     )
+    #     self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = (
+    #         self._viewer._contacts
+    #     )
     def viewer_setup(self):
-        self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-        self._viewer.cam.fixedcamid = 0
-        self._viewer.cam.distance = self.model.stat.extent * 1.5
-        self._viewer.cam.lookat[2] = 0.0
-        self._viewer.cam.lookat[0] = 0
-        self._viewer.cam.lookat[1] = 0.0
-        self._viewer.cam.azimuth = 180
-        self._viewer.cam.distance = 5
-        self._viewer.cam.elevation = -10
-        self._viewer.vopt.geomgroup[0] = 1
-        self._viewer._render_every_frame = True
-        # self.viewer._run_speed *= 20
-        self._viewer._contacts = True
-        self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = (
-            self._viewer._contacts
-        )
-        self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = (
-            self._viewer._contacts
-        )
+        assert self.viewer is not None
+        for key, value in DEFAULT_CAMERA_CONFIG.items():
+            if isinstance(value, np.ndarray):
+                getattr(self.viewer.cam, key)[:] = value
+            else:
+                setattr(self.viewer.cam, key, value)
 
-    def viewer_is_paused(self):
-        return self._viewer._paused
+    # def viewer_is_paused(self):
+    #     return self._viewer._paused
 
-    def render(self):
-        assert self._viewer is not None
-        if self.cfg.vis_record.record:
-            return self._viewer.read_pixels(camid=0)
-        else:
-            self._viewer.render()
-            return None
+    # def render(self):
+    #     assert self._viewer is not None
+    #     if self.cfg.vis_record.record:
+    #         return self._viewer.read_pixels(camid=0)
+    #     else:
+    #         self._viewer.render()
+    #         return None
 
     def save_video(self, name):
         assert self.cfg.vis_record.record
@@ -1268,13 +1267,13 @@ class RobotInterface(object):
 
     def get_root_body_vel(self):
         qveladr = self.get_jnt_qveladr_by_name("base")
-        return self.data.qvel[qveladr:qveladr+6].copy()
+        return self.data.qvel[qveladr : qveladr + 6].copy()
 
     def get_sensordata(self, sensor_name):
         sensor_id = self.model.sensor(sensor_name)
         sensor_adr = self.model.sensor_adr[sensor_id]
         data_dim = self.model.sensor_dim[sensor_id]
-        return self.data.sensordata[sensor_adr:sensor_adr+data_dim]
+        return self.data.sensordata[sensor_adr : sensor_adr + data_dim]
 
     def get_rfoot_body_pos(self):
         return self.data.body(self.rfoot_body_name).xpos.copy()
@@ -1625,3 +1624,195 @@ class RobotInterface(object):
         Increment simulation by one step.
         """
         mujoco.mj_step(self.model, self.data)
+
+
+class DigitEnvFlat(DigitEnv, utils.EzPickle):
+
+    def __init__(
+        self,
+        cfg=DigitEnvConfig(),
+        log_dir="",
+        **kwargs,
+    ):
+        super().__init__(
+            cfg,
+            log_dir,
+            **kwargs,
+        )
+        assert (
+            self.cfg.terrain.terrain_type == "flat"
+        ), f"the terrain type should be flat. but got {self.cfg.terrain.terrain_type}"
+
+        # load terrain info
+        self.env_origin = np.zeros(3)
+        terrain_dir = os.path.join(
+            self.home_path, "models/" + self.cfg.terrain.terrain_type
+        )
+
+        # load model and data from xml
+        # path_to_xml_out = os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml"
+        # self.model = mujoco.MjModel.from_xml_path(path_to_xml_out)
+        # self.data = mujoco.MjData(self.model)
+        assert self.model.opt.timestep == self.cfg.env.sim_dt
+
+        # class that have functions to get and set lowlevel mujoco simulation parameters
+        self._interface = RobotInterface(
+            self.model,
+            self.data,
+            "right-toe-roll",
+            "left-toe-roll",
+            "right-foot",
+            "left-foot",
+        )
+        # nominal pos and standing pos
+        # self.nominal_qpos = self.data.qpos.ravel().copy() # lets not use this. because nomial pos is weird
+        # self.nominal_qvel = self.data.qvel.ravel().copy()
+        # self.nominal_qpos = self.model.keyframe("standing").qpos
+        # self.nominal_qpos = np.array(
+        #     [
+        #         0.0000000e00,
+        #         -0.00000e-02,
+        #         1.03077151e00,
+        #         1.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         2.95267333e-01,
+        #         2.59242753e-03,
+        #         2.02006095e-01,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         3.63361699e-01,
+        #         -2.26981220e-02,
+        #         -3.15269005e-01,
+        #         -2.18936907e-02,
+        #         -4.38871903e-02,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -9.96320522e-03,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         1.67022233e-02,
+        #         -8.88278765e-02,
+        #         -1.42914279e-01,
+        #         1.09086647e00,
+        #         5.59902988e-04,
+        #         -1.40124351e-01,
+        #         -2.95267333e-01,
+        #         2.59242753e-03,
+        #         -2.02006095e-01,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -3.63361699e-01,
+        #         -2.26981220e-02,
+        #         3.15269005e-01,
+        #         -2.18936907e-02,
+        #         4.38871903e-02,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -9.96320522e-03,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         0.00000000e00,
+        #         -1.67022233e-02,
+        #         8.88278765e-02,
+        #         1.42914279e-01,
+        #         -1.09086647e00,
+        #         -5.59902988e-04,
+        #         1.40124351e-01,
+        #     ]
+        # )
+
+        self.nominal_qpos, self.nominal_qvel = (
+            self.ref_qpos[0],
+            self.ref_qvel[0],
+        )
+        self.nominal_motor_offset = self.nominal_qpos[
+            self._interface.get_motor_qposadr()
+        ]
+
+        # self._mbc = MBCWrapper(
+        #     self.cfg, self.nominal_motor_offset, self.cfg.control.action_scale
+        # )
+        self._mbc = None
+        self._record_fps = round(2000 / self.frame_skip)
+        # setup viewer
+        self.frames = []  # this only be cleaned at the save_video function
+        self._viewer = None
+        if self.cfg.vis_record.visualize:
+            self.visualize()
+
+        # defualt geom friction
+        self.default_geom_friction = self.model.geom_friction.copy()
+        # pickling
+        # kwargs = {
+        #     "cfg": self.cfg,
+        #     "log_dir": self.log_dir,
+        # }
+        self._reset_state()
+        utils.EzPickle.__init__(self, **kwargs)
+
+    def _reset_state(self):
+        init_qpos = self.nominal_qpos.copy()
+        init_qvel = self.nominal_qvel.copy()
+        init_qpos[0:2] = self.env_origin[:2]
+
+        # dof randomized initialization
+        if self.cfg.reset_state.random_dof_reset:
+            init_qvel[:6] = init_qvel[:6] + np.random.normal(
+                0, self.cfg.reset_state.root_v_std, 6
+            )
+            for joint_name in self.cfg.reset_state.random_dof_names:
+                qposadr = self._interface.get_jnt_qposadr_by_name(joint_name)
+                qveladr = self._interface.get_jnt_qveladr_by_name(joint_name)
+                init_qpos[qposadr[0]] = init_qpos[qposadr[0]] + np.random.normal(
+                    0, self.cfg.reset_state.p_std
+                )
+                init_qvel[qveladr[0]] = init_qvel[qveladr[0]] + np.random.normal(
+                    0, self.cfg.reset_state.v_std
+                )
+
+        self._set_state(np.asarray(init_qpos), np.asarray(init_qvel))
+
+        # adjust so that no penetration
+        rfoot_poses = np.array(self._interface.get_rfoot_keypoint_pos())
+        lfoot_poses = np.array(self._interface.get_lfoot_keypoint_pos())
+        rfoot_poses = np.array(rfoot_poses)
+        lfoot_poses = np.array(lfoot_poses)
+
+        delta = np.max(
+            np.concatenate([0.0 - rfoot_poses[:, 2], 0.0 - lfoot_poses[:, 2]])
+        )
+        init_qpos[2] = init_qpos[2] + delta + 0.02
+
+        self._set_state(np.asarray(init_qpos), np.asarray(init_qvel))
+
+    def set_command(self, command):
+        # this should be used before reset and self.is_command_fixed should be True
+        assert self.is_command_fixed
+        # assert self._step_cnt is None
+        self.usr_command = command
+        if self._mbc.model_based_controller is not None:
+            self._mbc.set_command(self.usr_command)
+
+    def uploadGPU(self, hfieldid=None, meshid=None, texid=None):
+        # hfield
+        if hfieldid is not None:
+            mujoco.mjr_uploadHField(self.model, self._viewer.ctx, hfieldid)
+        # mesh
+        if meshid is not None:
+            mujoco.mjr_uploadMesh(self.model, self._viewer.ctx, meshid)
+        # texture
+        if texid is not None:
+            mujoco.mjr_uploadTexture(self.model, self._viewer.ctx, texid)
