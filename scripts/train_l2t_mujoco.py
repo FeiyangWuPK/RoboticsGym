@@ -17,6 +17,8 @@ import warnings
 
 import roboticsgym.envs
 
+from roboticsgym.algorithms.sb3.utilities import VideoEvalCallback
+
 try:
     from tqdm import TqdmExperimentalWarning
 
@@ -32,34 +34,23 @@ from gymnasium.envs.registration import register
 
 from roboticsgym.algorithms.sb3.newAlgo import (
     HIP,
+)
+from roboticsgym.algorithms.sb3.l2t_rl import L2TRL
+from roboticsgym.algorithms.sb3.l2t_rl_onpolicy import L2TRL_O
+from roboticsgym.algorithms.sb3.utilities import (
+    linear_schedule,
     EvalStudentCallback,
-    evaluate_student_policy,
     EvalTeacherCallback,
+    evaluate_student_policy,
     evaluate_teacher_policy,
 )
 
 from roboticsgym.algorithms.sb3.newAlgo_student_only import HIPSTUDENTONLY
 
 
-def linear_schedule(initial_value: float) -> Callable[[float], float]:
-    """
-    Linear learning rate schedule.
-
-    :param initial_value: Initial learning rate.
-    :return: schedule that computes
-      current learning rate depending on remaining progress
-    """
-
-    def func(progress_remaining: float) -> float:
-        """
-        Progress will decrease from 1 (beginning) to 0.
-
-        :param progress_remaining:
-        :return: current learning rate
-        """
-        return progress_remaining * initial_value
-
-    return func
+import hydra
+from omegaconf import DictConfig, OmegaConf
+import datetime
 
 
 def test_student_policy():
@@ -141,9 +132,9 @@ def test_student_policy():
 
 def run_mujoco_rl(env_name):
     config = {
-        "teacher_policy_type": "IPMDPolicy",
-        "student_policy_type": "IPMDPolicy",
-        "total_timesteps": 1e6,
+        "teacher_policy_type": "L2TPolicy",
+        "student_policy_type": "L2TPolicy",
+        "total_timesteps": 3e6,
         "env_id": "NoisyMujoco-v4",
         "buffer_size": int(1e6),
         "train_freq": 1,
@@ -153,11 +144,9 @@ def run_mujoco_rl(env_name):
         "ent_coef": "auto",
         "student_ent_coef": "auto",
         "learning_rate": 3e-4,
-        "n_envs": 8,
+        "n_envs": 24,
         "batch_size": 256,
         "seed": 1,
-        "expert_replaybuffersize": 600,
-        "expert_replaybuffer": "expert_trajectories/cassie_v4/10traj_morestable.pkl",
         "student_begin": int(0),
         "teacher_gamma": 0.99,
         "student_gamma": 0.99,
@@ -169,17 +158,16 @@ def run_mujoco_rl(env_name):
         "thv_imitation_learning": True,
     }
     run = wandb.init(
-        project="ICML2024 Guided Learning MuJoCo RL",
+        project="CoRL2024 L2T MuJoCo",
         config=config,
         # name=config["env_id"] + f'-{time.strftime("%Y-%m-%d-%H-%M-%S")}',
-        name=f"Mujoco RL {env_name} {config['student_domain_randomization_scale']} Jan 30 seed 1",
+        name=f"Mujoco RL {env_name} {config['student_domain_randomization_scale']}",
         tags=[config["env_id"]],
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-        # monitor_gym=True,  # auto-upload the videos of agents playing the game
+        monitor_gym=True,  # auto-upload the videos of agents playing the game
         save_code=True,  # optional
         reinit=True,
         notes="",
-        # mode="offline",
     )
     wandb.run.log_code(".")
 
@@ -212,7 +200,7 @@ def run_mujoco_rl(env_name):
         log_path=f"logs/{run.project}/{run.name}/teacher/",
         eval_freq=1000,
         n_eval_episodes=5,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -231,7 +219,7 @@ def run_mujoco_rl(env_name):
         log_path=f"logs/{run.project}/{run.name}/student/",
         eval_freq=1000,
         n_eval_episodes=5,
-        deterministic=True,
+        deterministic=False,
         render=False,
         verbose=1,
     )
@@ -239,7 +227,7 @@ def run_mujoco_rl(env_name):
         [teacher_eval_callback, wandbcallback, eval_student_callback]
     )
     # Init model
-    irl_model = HIP(
+    model = L2TRL(
         policy=config["teacher_policy_type"],
         student_policy=config["student_policy_type"],
         env=train_env,
@@ -252,26 +240,19 @@ def run_mujoco_rl(env_name):
         batch_size=config["batch_size"],
         learning_rate=config["learning_rate"],
         gradient_steps=config["gradient_steps"],
-        expert_replaybuffer=config["expert_replaybuffer"],
-        expert_replaybuffersize=config["expert_replaybuffersize"],
         tensorboard_log=f"logs/tensorboard/{run.name}/",
         seed=config["seed"],
         learning_starts=100,
-        student_begin=config["student_begin"],
-        reward_reg_param=config["reward_reg_param"],
         student_domain_randomization_scale=config["student_domain_randomization_scale"],
         explorer=config["explorer"],
-        teacher_state_only_reward=config["state_only"],
-        testing_pomdp=config["testing_pomdp"],
-        thv_imitation_learning=config["thv_imitation_learning"],
     )
 
     # Model learning
-    irl_model.learn(
+    model.learn(
         total_timesteps=config["total_timesteps"],
         callback=callback_list,
         progress_bar=config["progress_bar"],
-        log_interval=50,
+        log_interval=1000,
     )
 
     # Finish wandb run
@@ -871,3 +852,75 @@ def halfcheetah_ablation():
 
     # Finish wandb run
     run.finish()
+
+
+@hydra.main(config_path="configs", config_name="train_digit", version_base=None)
+def train_noisy_mujoco_l2t(cfg: DictConfig):
+    """
+    Train Noisy MuJoCo with PPO.
+    """
+    run = wandb.init(
+        project=cfg.wandb.project,
+        config=dict(cfg),  # Passes all the configurations to WandB
+        name="Noisy MuJoCo L2T RL",
+        monitor_gym=cfg.env.name,
+        save_code=True,
+        group=cfg.wandb.group,
+        sync_tensorboard=cfg.wandb.sync_tensorboard,
+        notes=" ",
+    )
+    # Convert unix time to human readable format
+    start_time = datetime.datetime.fromtimestamp(run.start_time).strftime(
+        "%Y-%m-%d-%H-%M-%S"
+    )
+
+    # Create the environment
+    env = make_vec_env(
+        cfg.env.name,
+        n_envs=cfg.env.n_envs,
+        seed=cfg.env.seed,
+        vec_env_cls=SubprocVecEnv,
+        # env_kwargs={"render_mode": "human"},
+    )
+    eval_env = make_vec_env(
+        cfg.env.name,
+        n_envs=1,
+        seed=cfg.env.seed,
+        vec_env_cls=SubprocVecEnv,
+    )
+
+    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
+
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
+        log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
+        eval_freq=10000,
+        n_eval_episodes=5,
+        callback_on_new_best=video_callback,
+        deterministic=True,
+        render=True,
+        verbose=1,
+    )
+    wandb_callback = WandbCallback()
+
+    model = L2TRL_O(
+        policy=cfg.training.teacher_policy_type,
+        env=env,
+        student_policy=cfg.training.student_policy_type,
+        verbose=cfg.training.verbose,
+        learning_rate=cfg.training.learning_rate,
+        batch_size=cfg.training.batch_size,
+        tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
+        mixture_coeff=cfg.training.mixture_coeff,
+    )
+
+    # Train the model
+    model.learn(
+        total_timesteps=cfg.training.total_timesteps,
+        progress_bar=cfg.training.progress_bar,
+        log_interval=cfg.training.log_interval,
+        callback=CallbackList([eval_callback, wandb_callback]),
+    )
+
+    run.finish()  # type: ignore

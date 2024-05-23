@@ -79,7 +79,7 @@ except ImportError:
 SelfL2TRL = TypeVar("SelfL2TRL", bound="L2TRL")
 
 
-class L2TRL(OnPolicyAlgorithm):
+class L2TRL_O(OnPolicyAlgorithm):
     """
     Proximal Policy Optimization algorithm (PPO) (clip version)
 
@@ -165,6 +165,7 @@ class L2TRL(OnPolicyAlgorithm):
         target_kl: Optional[float] = None,
         stats_window_size: int = 100,
         tensorboard_log: Optional[str] = None,
+        mixture_coeff: float = 0.2,
         policy_kwargs: Optional[Dict[str, Any]] = None,
         verbose: int = 0,
         seed: Optional[int] = None,
@@ -232,6 +233,7 @@ class L2TRL(OnPolicyAlgorithm):
         self.normalize_advantage = normalize_advantage
         self.target_kl = target_kl
         self.student_policy = student_policy
+        self.mixture_coeff = mixture_coeff
 
         if _init_setup_model:
             self._setup_model()
@@ -585,7 +587,7 @@ class L2TRL(OnPolicyAlgorithm):
             (used in recurrent policies)
         """
         # self.explorer has epsilon chance to be student
-        epsilon = 0.2
+        epsilon = self.mixture_coeff
         if np.random.uniform() < epsilon and self.num_timesteps > 0:
             self.explorer = "student"
         else:

@@ -848,7 +848,7 @@ class L2TRL(OffPolicyAlgorithm):
             (used in recurrent policies)
         """
         # self.explorer has epsilon chance to be student
-        epsilon = 0.2
+        epsilon = 0.0 * (1 - self._current_progress_remaining)
         if np.random.uniform() < epsilon and self.num_timesteps > 0:
             self.explorer = "student"
         else:
