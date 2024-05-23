@@ -147,7 +147,7 @@ def train_digit_ppo(cfg: DictConfig):
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="PPO 200Hz new env",
+        name="PPO 200Hz new env psp trajectory",
         monitor_gym=cfg.env.name,
         save_code=True,
         group=cfg.wandb.group,

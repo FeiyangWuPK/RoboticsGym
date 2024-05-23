@@ -285,11 +285,11 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         #     self.home_path, "logs/record_vel_track/ref_traj_marching_3s"
         # )
 
-        self.ref_trajectory = DigitTrajectory(
-            os.getcwd()
-            + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_20240514.csv"
-        )
+        # self.ref_trajectory = DigitTrajectory(
+        #     os.getcwd()
+        #     + "/roboticsgym/envs/"
+        #     + "reference_trajectories/digit_state_20240422.csv"
+        # )
         # self.ref_traj_dir = os.path.join(
         #     self.home_path, "logs/record_vel_track/crocoddyl_ref_traj_taichi_3s"
         # )
@@ -306,11 +306,13 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         # self.ref_a_pos = self.ref_qpos[:, self.p_index]  # actuation reference position
         # self.ref_a_vel = self.ref_qvel[:, self.v_index]
         # # self.ref_a_acc = self.ref_qacc[:, self.v_index]
-        self.ref_qpos = self.ref_trajectory.qpos[14000:]
-        self.ref_qvel = self.ref_trajectory.qvel[14000:]
-        # print(self.ref_qpos.shape)
-        self.ref_a_pos = self.ref_qpos[14000:, self.p_index]
-        self.ref_a_vel = self.ref_qvel[14000:, self.v_index]
+        self.ref_trajectory = np.load(
+            "roboticsgym/envs/reference_trajectories/Digit_walking_0.4ms.npz"
+        )
+        self.ref_qpos = self.ref_trajectory["arr_0"][:, :61]
+        self.ref_qvel = self.ref_trajectory["arr_1"][:, :54]
+        self.ref_a_pos = self.ref_qpos[:, self.p_index]
+        self.ref_a_vel = self.ref_qvel[:, self.v_index]
         self.ref_motion_len = self.ref_qpos.shape[0]
 
         self.ref_data = np.concatenate([self.ref_qpos, self.ref_qvel], axis=1)
