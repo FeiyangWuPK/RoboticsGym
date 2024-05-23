@@ -147,12 +147,13 @@ def train_digit_ppo(cfg: DictConfig):
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="PPO 200Hz aug obs",
+        name="PPO 200Hz new reward",
         monitor_gym=cfg.env.name,
         save_code=True,
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
+        # mode="offline",
         notes=" ",
     )
     # Convert unix time to human readable format
@@ -163,7 +164,7 @@ def train_digit_ppo(cfg: DictConfig):
     # Create the environment
     env = make_vec_env(
         cfg.env.name,
-        n_envs=32,  # cfg.env.n_envs,
+        n_envs=cfg.env.n_envs,
         seed=cfg.env.seed,
         vec_env_cls=SubprocVecEnv,
         # env_kwargs={"render_mode": "human"},
@@ -176,16 +177,16 @@ def train_digit_ppo(cfg: DictConfig):
         # env_kwargs={"render_mode": "human"},
     )
 
-    video_callback = VideoEvalCallback(eval_every=10000, eval_env=eval_env)
+    video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
 
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
         log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
-        eval_freq=10000,
-        n_eval_episodes=5,
+        eval_freq=20000,
+        n_eval_episodes=3,
         callback_on_new_best=video_callback,
-        deterministic=True,
+        deterministic=False,
         render=True,
         verbose=1,
     )
@@ -201,17 +202,17 @@ def train_digit_ppo(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
 
-    # model.set_parameters(
-    #     "logs/CoRL2024 L2T Digit/PPO 200Hz change obs/2024-05-21-07-48-53-5yg3bcfd/best_model.zip"
-    # )
+    model.set_parameters(
+        "logs/CoRL2024 L2T Digit/PPO 200Hz new reward/2024-05-22-20-12-39-bhhaqgoc/best_model.zip"
+    )
 
     # evaluate_policy(model, eval_env, n_eval_episodes=5, render=True)
 
     # Train the model
     model.learn(
-        total_timesteps=int(60e6),
+        total_timesteps=int(4e7),
         progress_bar=True,
-        log_interval=1,
+        log_interval=10,
         callback=CallbackList([eval_callback, wandb_callback]),
     )
 
@@ -232,7 +233,7 @@ def visualize_expert_trajectory(cfg: DictConfig):
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
-        # mode="offline",
+        mode="offline",
     )
 
     # Create the environment
@@ -241,6 +242,7 @@ def visualize_expert_trajectory(cfg: DictConfig):
         n_envs=1,
         seed=cfg.env.seed,
         # env_kwargs={"render_mode": "human"},
+        vec_env_cls=SubprocVecEnv,
     )
 
     eval_env = make_vec_env(
@@ -248,13 +250,14 @@ def visualize_expert_trajectory(cfg: DictConfig):
         n_envs=1,
         seed=cfg.env.seed,
         env_kwargs={"render_mode": "rgb_array"},
+        vec_env_cls=SubprocVecEnv,
     )
 
     video_env = VecVideoRecorder(
         eval_env,
         "./videos/",
         record_video_trigger=lambda x: x % 1 == 0,
-        video_length=1000,
+        video_length=2000,
     )
 
     eval_callback = EvalCallback(

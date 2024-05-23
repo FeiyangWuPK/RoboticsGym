@@ -41,7 +41,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
-        "render_fps": 33,
+        "render_fps": 200,
     }
 
     def __init__(
@@ -61,7 +61,7 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         self._terminate_when_unhealthy = terminate_when_unhealthy
         self._healthy_z_range = healthy_z_range
         self.timestamp = 0
-        self.frame_skip = 60
+        self.frame_skip = 10
 
         self._reset_noise_scale = reset_noise_scale
 
@@ -94,8 +94,19 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             + "reference_trajectories/digit_state_20240514.csv"
         )
 
-        self.init_qpos, self.init_qvel = self.ref_trajectory.state(0)
-        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(0)
+        self.ref_traj_wei = np.load(
+            "roboticsgym/envs/reference_trajectories/Digit_walking_0.4ms.npz"
+        )
+        self.ref_qpos_full = self.ref_traj_wei["arr_0"][:, :61]
+        self.ref_qvel_full = self.ref_traj_wei["arr_1"][:, :54]
+
+        # self.init_qpos, self.init_qvel = self.ref_trajectory.state(0)
+        # self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(0)
+
+        self.init_qpos = self.ref_qpos_full[0]
+        self.init_qvel = self.ref_qvel_full[0]
+        self.ref_qpos = self.ref_qpos_full[0]
+        self.ref_qvel = self.ref_qvel_full[0]
 
         # Index from README. The toes are actuated by motor A and B.
         self.p_index = [
@@ -276,7 +287,11 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         if self.timestart is None:
             self.timestart = time.time()
 
-        self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
+        # self.ref_qpos, self.ref_qvel = self.ref_trajectory.state(self.timestamp)
+        self.ref_qpos, self.ref_qvel = (
+            self.ref_qpos_full[self.timestamp],
+            self.ref_qvel_full[self.timestamp],
+        )
 
         xy_position_before = mass_center(self.model, self.data)
 
@@ -347,7 +362,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
             self.render()
 
         # because ref traj is 1000Hz
-        self.timestamp += int(self.frame_skip / 2)
+        # self.timestamp += int(self.frame_skip / 2)
+        self.timestamp += 1
         return observation, reward, terminated, False, info
 
     def reset_model(self):
@@ -358,7 +374,8 @@ class DigitEnv(MujocoEnv, utils.EzPickle):
         qvel = self.init_qvel
         self.set_state(qpos, qvel)
 
-        self.timestamp = 14000
+        # self.timestamp = 14000
+        self.timestamp = 0
         observation = self._get_obs()
 
         # self.data.userdata = np.zeros(20)  # Use userdata as target position.
