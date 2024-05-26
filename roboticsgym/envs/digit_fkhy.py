@@ -26,9 +26,9 @@ from roboticsgym.envs.cfg.test.vel_track_test.vel_track_test_config import (
 
 
 DEFAULT_CAMERA_CONFIG = {
-    "trackbodyid": 2,
-    "distance": 5.0,
-    "lookat": np.array((0.0, 0.0, 1.0)),
+    "trackbodyid": 1,
+    "distance": 4.0,
+    "lookat": np.array((0.0, 0.0, 2.0)),
     "elevation": -20.0,
 }
 
@@ -805,6 +805,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         ]
         self.endeffector_index = [21, 41, 16, 36]
 
+        # Load reference trajectory
         if self.ref_traj_dir is not None:
 
             self.ref_data = np.loadtxt(
@@ -825,6 +826,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         # constants
         # self.max_episode_length = int(self.cfg.env.max_time / self.cfg.control.control_dt)
         self.max_episode_length = self.ref_motion_len
+
         self.num_substeps = (
             int(self.cfg.control.control_dt / (self.cfg.env.sim_dt + 1e-8)) + 1
         )
@@ -845,12 +847,15 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self.motor_joint_friction = np.zeros(20)
 
         # containers (should be reset in reset())
-        self.action = None  # only lower body
+        self.action = None
         self.full_action = None  # full body
         self.adjusted_target_pos = None
         self.usr_command = None
         self._step_cnt = None
         self.max_traveled_distance = None
+        self._viewer = None
+        if self.render_mode == "human":
+            self.viewer_setup()
 
         self.joint_pos_hist = None
         self.joint_vel_hist = None
@@ -873,17 +878,19 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
 
         self.curr_terrain_level = None
 
+        self.camera_name = "side"
+
     def reset(self, seed=None, options=None):
         # domain randomization
         if self.cfg.domain_randomization.is_true:
             self.domain_randomization()
-        # TODO: debug everything here
-        # reset containers
+
+        # reset counter
         self._step_cnt = 0
 
         self.max_traveled_distance = 0.0
 
-        # reset containers that are used in _get_obs
+        # reset counter that are used in _get_obs
         self.joint_pos_hist = [np.zeros(12)] * self.history_len
         self.joint_vel_hist = [np.zeros(12)] * self.history_len
         self.action = np.zeros(self.cfg.env.act_dim, dtype=np.float32)
@@ -893,39 +900,15 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self._reset_state()
 
         # observe for next step
-        self._get_obs()  # call _reset_state and _sample_commands before this.
-
-        # start rendering
-        if self._viewer is not None and self.cfg.vis_record.visualize:
-            frame = self.render()
-            if frame is not None:
-                self.frames.append(frame)
-
-        # # reset mbc
-        # self._do_extra_in_reset() # self.robot_state should be updated before this by calling _get_obs
-
-        # self._step_assertion_check()
-
-        # log data at TIMEOUT
-        # if StepType.TIMEOUT and self.log_data_flag and (self.log_dir is not None):
-        #     # Writing to CSV file
-
-        #     np.savetxt(
-        #         self.log_dir,
-        #         np.column_stack((self.log_time, self.log_data)),
-        #         delimiter=",",
-        #         fmt="%s",
-        #         comments="",
-        #     )
-        # print(f'Data has been stored in {self.log_dir}')
-
+        obs = self._get_obs()
+        info = dict(
+            curr_value_obs=self.value_obs.copy(), robot_state=self.robot_state.copy()
+        )
         # second return is for episodic info
         # not sure if copy is needed but to make sure...
-        return self.get_eps_info()
+        return obs, info
 
     def step(self, action):
-
-        st_time = time.time()
         if self._step_cnt is None:
             raise RuntimeError("reset() must be called before step()!")
 
@@ -939,27 +922,32 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         )
         self.action = self.adjusted_target_pos - hat_target_pos
 
-        # # for purerl baseline
-        # self.adjusted_target_pos = 0.5 * (action + 1) * (self.joint_range[1] - self.joint_range[0]) + self.joint_range[0]
-        # self.action = self.adjusted_target_pos
-
-        start = time.time()
         # control step
-        if self.cfg.control.control_type == "PD":
-            target_joint = self.adjusted_target_pos
-            if self.cfg.domain_randomization.is_true:
-                self.action_delay_time = int(
-                    np.random.uniform(0, self.cfg.domain_randomization.action_delay, 1)
-                    / self.cfg.env.sim_dt
-                )
-            self._pd_control(target_joint, np.zeros_like(target_joint))
-        if self.cfg.control.control_type == "T":
-            self._torque_control(self.full_action)
+        target_joint = self.adjusted_target_pos
+        if self.cfg.domain_randomization.is_true:
+            self.action_delay_time = int(
+                np.random.uniform(0, self.cfg.domain_randomization.action_delay, 1)
+                / self.cfg.env.sim_dt
+            )
+        self._pd_control(target_joint, np.zeros_like(target_joint))
 
-        rewards, tot_reward = self._post_physics_step()
+        # observe for next step
+        self._get_obs()
+        self._is_terminal()
+
+        rewards, tot_reward = self._compute_reward()
+
+        self._step_cnt += 1
+
+        self.step_type = StepType.get_step_type(
+            step_cnt=self._step_cnt,
+            max_episode_length=self.max_episode_length,
+            done=self._terminal,
+        )
+        if self.step_type in (StepType.TERMINAL, StepType.TIMEOUT):
+            self._step_cnt = None
 
         info = {
-            "time": time.time() - start,
             "reward_info": rewards,
             "tot_reward": tot_reward,
             "next_value_obs": self.value_obs.copy(),
@@ -969,13 +957,9 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             or self.step_type is StepType.TIMEOUT,
         }
 
-        observation = self.actor_obs.copy()  # this observation is next state
+        observation = self.actor_obs  # this observation is next state
         if self.render_mode == "human":
             self.render()
-
-        # end_time = time.time()
-        # if (end_time - st_time) < self.cfg.control.control_dt:
-        #     time.sleep(self.cfg.control.control_dt - (end_time - st_time))
 
         return (
             observation,
@@ -985,49 +969,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             info,
         )
 
-    def get_eps_info(self):
-        """
-        return current environment's info.
-        These informations are used when starting the episodes. starting obeservations.
-        """
-        return self.actor_obs.copy(), dict(
-            curr_value_obs=self.value_obs.copy(), robot_state=self.robot_state.copy()
-        )
-
-    """ 
-    internal helper functions 
-    """
-
-    def _sample_commands(self):
-        """
-        sample command for env
-        make sure to call mbc.set_usr_command or mbc.reset after this. so that mbc's usr command is sync with env's
-        """
-        # Random command sampling in reset
-        usr_command = np.zeros(3, dtype=np.float32)
-        usr_command[0] = np.random.uniform(
-            self.cfg.commands.ranges.x_vel_range[0],
-            self.cfg.commands.ranges.x_vel_range[1],
-        )
-
-        usr_command[1] = np.random.uniform(
-            self.cfg.commands.ranges.y_vel_range[0],
-            self.cfg.commands.ranges.y_vel_range[1],
-        )
-        usr_command[2] = np.random.uniform(
-            self.cfg.commands.ranges.ang_vel_range[0],
-            self.cfg.commands.ranges.ang_vel_range[1],
-        )
-
-        if abs(usr_command[0]) < self.cfg.commands.ranges.cut_off:
-            usr_command[0] = 0.0
-        if abs(usr_command[1]) < self.cfg.commands.ranges.cut_off:
-            usr_command[1] = 0.0
-        if abs(usr_command[2]) < self.cfg.commands.ranges.cut_off:
-            usr_command[2] = 0.0
-        self.usr_command = usr_command
-        # print("usr_command: ", self.usr_command)
-
     def _set_state(self, qpos, qvel, xpos):
         assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
         self.data.qpos[:] = qpos
@@ -1036,18 +977,55 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         # mujoco.mj_forward(self.model, self.data)
 
     def _reset_state(self):
-        raise NotImplementedError
+        init_qpos = self.nominal_qpos.copy()
+        init_qvel = self.nominal_qvel.copy()
+        init_qpos[0:2] = self.env_origin[:2]
+        init_xpos = self.nominal_xpos.copy()
 
-    def _torque_control(self, torque):
-        ratio = self._interface.get_gear_ratios().copy()
-        for _ in range(
-            self._num_substeps
-        ):  # this is open loop torque control. no feedback.
-            tau = [
-                (i / j) for i, j in zip(torque, ratio)
-            ]  # TODO: why divide by ratio..? This need to be checked
-            self._interface.set_motor_torque(tau)
-            self._interface.step()
+        # dof randomized initialization
+        if self.cfg.reset_state.random_dof_reset:
+            init_qvel[:6] = init_qvel[:6] + np.random.normal(
+                0, self.cfg.reset_state.root_v_std, 6
+            )
+            for joint_name in self.cfg.reset_state.random_dof_names:
+                qposadr = self._interface.get_jnt_qposadr_by_name(joint_name)
+                qveladr = self._interface.get_jnt_qveladr_by_name(joint_name)
+                init_qpos[qposadr[0]] = init_qpos[qposadr[0]] + np.random.normal(
+                    0, self.cfg.reset_state.p_std
+                )
+                init_qvel[qveladr[0]] = init_qvel[qveladr[0]] + np.random.normal(
+                    0, self.cfg.reset_state.v_std
+                )
+
+        self._set_state(
+            np.asarray(init_qpos), np.asarray(init_qvel), np.asarray(init_xpos)
+        )
+
+        # adjust so that no penetration
+        rfoot_poses = np.array(self._interface.get_rfoot_keypoint_pos())
+        lfoot_poses = np.array(self._interface.get_lfoot_keypoint_pos())
+        rfoot_poses = np.array(rfoot_poses)
+        lfoot_poses = np.array(lfoot_poses)
+
+        delta = np.max(
+            np.concatenate([0.0 - rfoot_poses[:, 2], 0.0 - lfoot_poses[:, 2]])
+        )
+        init_qpos[2] = init_qpos[2] + delta + 0.02
+
+        self._set_state(
+            np.asarray(init_qpos), np.asarray(init_qvel), np.asarray(init_xpos)
+        )
+
+    # def _torque_control(self, torque):
+    #     ratio = self._interface.get_gear_ratios().copy()
+    #     for _ in range(
+    #         self._num_substeps
+    #     ):  # this is open loop torque control. no feedback.
+    #         tau = [
+    #             (i / j) for i, j in zip(torque, ratio)
+    #         ]
+    #         self._interface.set_motor_torque(tau)
+    #         self._interface.step()
 
     def _pd_control(self, target_pos, target_vel):
         self._interface.set_pd_gains(self.kp, self.kd)
@@ -1075,38 +1053,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                 self._interface.set_motor_torque(tau)
                 self._interface.step()
 
-    def _post_physics_step(self):
-
-        # observe for next step
-        self._get_obs()
-        self._is_terminal()
-
-        # TODO: debug reward function
-        rewards, tot_reward = self._compute_reward()
-
-        # visualize
-        if (
-            self._viewer is not None
-            and self._step_cnt % self.record_interval == 0
-            and self.cfg.vis_record.visualize
-            and self._step_cnt
-        ):
-            frame = self.render()
-            if frame is not None:
-                self.frames.append(frame)
-
-        self._step_cnt += 1
-
-        self.step_type = StepType.get_step_type(
-            step_cnt=self._step_cnt,
-            max_episode_length=self.max_episode_length,
-            done=self._terminal,
-        )
-        if self.step_type in (StepType.TERMINAL, StepType.TIMEOUT):
-            self._step_cnt = None  # this becomes zero when reset is called
-
-        return rewards, tot_reward
-
     def _get_obs(self):
         """ "
         update actor_obs, value_obs, robot_state, all the other states
@@ -1129,23 +1075,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self._update_joint_hist()
         self._update_robot_state()
 
-        # log data in CSV file
-        if self.log_data_flag:
-            self.log_time.append(str(datetime.datetime.now()))
-            self.log_data = np.vstack(
-                [
-                    self.log_data,
-                    np.concatenate(
-                        (
-                            self.digit_qpos,
-                            self.digit_qvel,
-                            self.xpos[self.endeffector_index].reshape((12)),
-                        ),
-                        axis=0,
-                    ),
-                ]
-            )
-
         # update observations
         self.projected_gravity = self._interface.get_projected_gravity_vec()
         self.noisy_projected_gravity = self.projected_gravity + np.random.normal(
@@ -1163,7 +1092,27 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             self.max_traveled_distance, np.linalg.norm(self.root_xy_pos[:2])
         )
 
-        # not sure if copy is needed but to make sure...
+        obs = np.concatenate(
+            [
+                self.digit_qpos[:3],  # 3
+                self.digit_qvel[:3],  # 3
+                self.digit_qpos[self.p_index],  # 20
+                self.digit_qvel[self.v_index],  # 20
+                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                self.ref_qpos[self._step_cnt, :3],  # 3
+                self.ref_qvel[self._step_cnt, :3],  # 3
+                self.ref_a_pos[self._step_cnt],  # 20
+                self.ref_a_vel[self._step_cnt],  # 20
+                self.ref_ee_pos[self._step_cnt, :],  # 12
+                self.action.copy(),  # 20
+                # self.joint_pos_hist_obs,
+                # self.joint_vel_hist_obs,
+                # self.stair_height,
+                # self.stair_depth,
+            ]
+        ).astype(np.float64)
+
+        return obs
 
     def _update_root_state(self):
         # root states
@@ -1328,17 +1277,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             .flatten()
         )
 
-        assert self.value_obs.shape[0] == self.cfg.env.value_obs_dim
-
-    def _do_extra_in_reset(self):
-        self._mbc.reset(
-            self.robot_state, self.usr_command
-        )  # get_obs should be called before this to update robot_state
-
-    def _step_assertion_check(self):
-        assert self._mbc.get_phase_variable() == 0.0
-        assert self._mbc.get_domain() == 1
-
     def _is_terminal(self):
 
         self.termination_conditions = self.cfg.TASK_CONFIG[self.task].get(
@@ -1422,10 +1360,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
 
         return rewards, total_reward
 
-    """
-    Visualization Code
-    """
-
     def close(self):
         if self._viewer is not None:
             self._viewer.close()
@@ -1435,34 +1369,12 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         """Creates a visualization of the environment."""
         assert self.cfg.vis_record.visualize, "you should set visualize flag to true"
         assert self._viewer is None, "there is another viewer"
-        # if self._viewer is not None:
-        #     #     self._viewer.close()
-        #     #     self._viewer = None
-        #     return
-        if self.cfg.vis_record.record:
-            self._viewer = mujoco_viewer.MujocoViewer(
-                self.model, self.data, "offscreen"
-            )
-        else:
-            self._viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
-        self.viewer_setup()
-
-    def viewer_setup(self):
-        assert self.viewer is not None
-        for key, value in DEFAULT_CAMERA_CONFIG.items():
-            if isinstance(value, np.ndarray):
-                getattr(self.viewer.cam, key)[:] = value
-            else:
-                setattr(self.viewer.cam, key, value)
 
     def clear_frames(self):
         self.frames = []
 
     def domain_randomization(self):
-        # NOTE: the parameters in mjModel shouldn't be changed in runtime!
-        # self.model.geom_friction[:,0] = self.default_geom_friction[:,0] * np.random.uniform(self.cfg.domain_randomization.friction_noise[0],
-        #                                                                           self.cfg.domain_randomization.friction_noise[1],
-        #                                                                           size=self.default_geom_friction[:,0].shape)
+
         self.motor_joint_friction = np.random.uniform(
             self.cfg.domain_randomization.joint_friction[0],
             self.cfg.domain_randomization.joint_friction[1],
@@ -1478,6 +1390,34 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             self.cfg.domain_randomization.kd_noise[1],
             size=self.kd.shape,
         )
+
+    def viewer_setup(self):
+        self._viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
+        self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+        self._viewer.cam.fixedcamid = 1
+        self._viewer.cam.distance = self.model.stat.extent * 50
+
+        self._viewer.cam.lookat = self.data.body("left-hip-roll").subtree_com
+        self._viewer.cam.distance = 20
+        self._viewer._render_every_frame = False
+        self._viewer._contacts = False
+        self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = (
+            self._viewer._contacts
+        )
+        self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = (
+            self._viewer._contacts
+        )
+
+    def viewer_is_paused(self):
+        return self._viewer._paused
+
+    def render(self):
+        assert self._viewer is not None
+        if self.cfg.vis_record.record:
+            return self._viewer.read_pixels(camid=1)
+        else:
+            self._viewer.render()
+            return None
 
 
 class DigitEnvFlat(DigitEnvBase, utils.EzPickle):
@@ -1497,16 +1437,6 @@ class DigitEnvFlat(DigitEnvBase, utils.EzPickle):
 
         # load terrain info
         self.env_origin = np.zeros(3)
-        terrain_dir = os.path.join(
-            self.home_path, "models/" + self.cfg.terrain.terrain_type
-        )
-
-        # load model and data from xml
-        # path_to_xml_out = (
-        #     os.getcwd() + "/roboticsgym/envs/xml/digit-v3-flat-noobject.xml",
-        # )
-        # self.model = mujoco.MjModel.from_xml_path(path_to_xml_out)
-        # self.data = mujoco.MjData(self.model)
 
         assert self.model.opt.timestep == self.cfg.env.sim_dt
 
@@ -1520,27 +1450,12 @@ class DigitEnvFlat(DigitEnvBase, utils.EzPickle):
             "left-foot",
         )
         # nominal pos and standing pos
-        # self.nominal_qpos = self.data.qpos.ravel().copy() # lets not use this. because nomial pos is weird
         self.nominal_qvel = self.data.qvel.ravel().copy()
         self.nominal_qpos = self.model.keyframe("standing").qpos
         self.nominal_xpos = self.data.xpos.copy()
         self.nominal_motor_offset = self.nominal_qpos[
             self._interface.get_motor_qposadr()
         ]
-
-        # self._mbc = MBCWrapper(
-        #     self.cfg,
-        #     self.nominal_motor_offset,
-        #     self.cfg.control.action_scale,
-        #     self.task,
-        # )
-        self._mbc = None
-        self._record_fps = 15
-        # setup viewer
-        self.frames = []  # this only be cleaned at the save_video function
-        self._viewer = None
-        if self.cfg.vis_record.visualize:
-            self.visualize()
 
         # defualt geom friction
         self.default_geom_friction = self.model.geom_friction.copy()
@@ -1552,113 +1467,3 @@ class DigitEnvFlat(DigitEnvBase, utils.EzPickle):
             "task": self.task,
         }
         utils.EzPickle.__init__(self, **kwargs)
-
-    def _reset_state(self):
-        init_qpos = self.nominal_qpos.copy()
-        init_qvel = self.nominal_qvel.copy()
-        init_qpos[0:2] = self.env_origin[:2]
-        init_xpos = self.nominal_xpos.copy()
-
-        # dof randomized initialization
-        if self.cfg.reset_state.random_dof_reset:
-            init_qvel[:6] = init_qvel[:6] + np.random.normal(
-                0, self.cfg.reset_state.root_v_std, 6
-            )
-            for joint_name in self.cfg.reset_state.random_dof_names:
-                qposadr = self._interface.get_jnt_qposadr_by_name(joint_name)
-                qveladr = self._interface.get_jnt_qveladr_by_name(joint_name)
-                init_qpos[qposadr[0]] = init_qpos[qposadr[0]] + np.random.normal(
-                    0, self.cfg.reset_state.p_std
-                )
-                init_qvel[qveladr[0]] = init_qvel[qveladr[0]] + np.random.normal(
-                    0, self.cfg.reset_state.v_std
-                )
-
-        # # root direction randomize NOTE: don't do this when using mbc as expert. It mess up the target yaw computation
-        # init_qpos[3:7] = tf3.quaternions.mat2quat(tf3.euler.euler2mat(0, 0, np.random.uniform(-np.pi, np.pi)))
-        # p_index = [7, 8, 9, 14, 18, 23, 30, 31, 32, 33, 34, 35, 36, 41, 45, 50, 57, 58, 59, 60]
-
-        self._set_state(
-            np.asarray(init_qpos), np.asarray(init_qvel), np.asarray(init_xpos)
-        )
-
-        # adjust so that no penetration
-        rfoot_poses = np.array(self._interface.get_rfoot_keypoint_pos())
-        lfoot_poses = np.array(self._interface.get_lfoot_keypoint_pos())
-        rfoot_poses = np.array(rfoot_poses)
-        lfoot_poses = np.array(lfoot_poses)
-
-        delta = np.max(
-            np.concatenate([0.0 - rfoot_poses[:, 2], 0.0 - lfoot_poses[:, 2]])
-        )
-        init_qpos[2] = init_qpos[2] + delta + 0.02
-
-        self._set_state(
-            np.asarray(init_qpos), np.asarray(init_qvel), np.asarray(init_xpos)
-        )
-
-    def set_command(self, command):
-        # this should be used before reset and self.is_command_fixed should be True
-        assert self.is_command_fixed
-        # assert self._step_cnt is None
-        self.usr_command = command
-        if self._mbc.model_based_controller is not None:
-            self._mbc.set_command(self.usr_command)
-
-    def uploadGPU(self, hfieldid=None, meshid=None, texid=None):
-        # hfield
-        if hfieldid is not None:
-            mujoco.mjr_uploadHField(self.model, self._viewer.ctx, hfieldid)
-        # mesh
-        if meshid is not None:
-            mujoco.mjr_uploadMesh(self.model, self._viewer.ctx, meshid)
-        # texture
-        if texid is not None:
-            mujoco.mjr_uploadTexture(self.model, self._viewer.ctx, texid)
-
-
-class DigitTestEnvFlat(DigitEnvFlat):
-    def __init__(
-        self,
-        cfg=DigitTestEnvConfig(),
-        log_dir="",
-        ref_traj_dir="",
-        task="walking_forward",
-        **kwargs,
-    ):
-        super().__init__(cfg, log_dir, ref_traj_dir, task, **kwargs)
-        self._reset_counter = 0
-        self._command_sample_counter = 0
-
-    def reset(self, seed=None, options=None):
-        ret_val = super().reset()
-        self._reset_counter += 1
-        return ret_val
-
-    def _sample_commands(self):
-        """
-        sample command for test env.
-        This should follow the fixed velocity schedule.
-        make sure to call mbc.set_usr_command or mbc.reset after this. so that mbc's usr command is sync with env's.
-        """
-        # Random command sampling in reset
-        usr_command = np.zeros(3, dtype=np.float32)
-        usr_command[0] = self.cfg.commands.samples.x_vel[
-            self._command_sample_counter % self.cfg.commands.samples.x_vel.shape[0]
-        ]
-        usr_command[1] = self.cfg.commands.samples.y_vel[
-            self._command_sample_counter % self.cfg.commands.samples.y_vel.shape[0]
-        ]
-        usr_command[2] = self.cfg.commands.samples.ang_vel[
-            self._command_sample_counter % self.cfg.commands.samples.ang_vel.shape[0]
-        ]
-        if abs(usr_command[0]) < self.cfg.commands.ranges.cut_off:
-            usr_command[0] = 0.0
-        if abs(usr_command[1]) < self.cfg.commands.ranges.cut_off:
-            usr_command[1] = 0.0
-        if abs(usr_command[2]) < self.cfg.commands.ranges.cut_off:
-            usr_command[2] = 0.0
-
-        self.usr_command = usr_command
-        self._command_sample_counter += 1
-        # print("usr_command: ", self.usr_command)

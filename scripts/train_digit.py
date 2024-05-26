@@ -175,7 +175,7 @@ def train_digit_ppo(cfg: DictConfig):
         n_envs=1,
         seed=cfg.env.seed,
         vec_env_cls=SubprocVecEnv,
-        # env_kwargs={"render_mode": "human"},
+        env_kwargs={"render_mode": "human"},
     )
 
     video_callback = VideoEvalCallback(eval_every=1, eval_env=eval_env)
@@ -184,7 +184,7 @@ def train_digit_ppo(cfg: DictConfig):
         eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
         log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
-        eval_freq=20000,
+        eval_freq=1,
         n_eval_episodes=3,
         callback_on_new_best=video_callback,
         deterministic=True,
@@ -205,7 +205,7 @@ def train_digit_ppo(cfg: DictConfig):
     )
 
     model.set_parameters(
-        "logs/CoRL2024 L2T Digit/PPO 200Hz new ref_traj/2024-05-21-18-24-20-78192px0/best_model.zip"
+        "logs/CoRL2024 L2T Digit/FKHY-v1/2024-05-25-15-27-20-su08c4uk/best_model.zip"
     )
 
     # evaluate_policy(model, eval_env, n_eval_episodes=5, render=True)
