@@ -58,6 +58,6 @@ register(
 
 register(
     id="DigitFKHY-v1",
-    entry_point="roboticsgym.envs.digit_fkhy:DigitEnvFlat",
-    max_episode_steps=800,
+    entry_point="roboticsgym.envs.digit_fkhy:DigitTestEnvFlat",
+    max_episode_steps=1000,
 )

@@ -11,7 +11,7 @@ from stable_baselines3.sac import SAC
 from stable_baselines3.ppo import PPO
 
 
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder, VecMonitor
 from stable_baselines3.common.evaluation import evaluate_policy
 from roboticsgym.algorithms.sb3.l2t_rl import (
     L2TRL,
@@ -140,21 +140,21 @@ def train_digit_ppo(cfg: DictConfig):
     """
     Train Digit with PPO.
     """
-    import warnings
+    import os
 
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    os.environ["WANDB_SILENT"] = "true"
 
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="PPO 200Hz new env",
+        name=cfg.wandb.run_name,
         monitor_gym=cfg.env.name,
-        save_code=True,
+        # save_code=True,
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
         # entity=cfg.wandb.entity,
         # mode="offline",
-        notes="0.3 scaled kp",
+        # notes="new mujoco, new ref traj",
     )
     # Convert unix time to human readable format
     start_time = datetime.datetime.fromtimestamp(run.start_time).strftime(
@@ -169,6 +169,7 @@ def train_digit_ppo(cfg: DictConfig):
         vec_env_cls=SubprocVecEnv,
         # env_kwargs={"render_mode": "human"},
     )
+
     eval_env = make_vec_env(
         cfg.env.name,
         n_envs=1,
@@ -197,20 +198,21 @@ def train_digit_ppo(cfg: DictConfig):
         "MlpPolicy",
         env,
         verbose=cfg.training.verbose,
-        learning_rate=cfg.training.learning_rate,
+        # learning_rate=cfg.training.learning_rate,
+        learning_rate=linear_schedule(5e-4),
         batch_size=cfg.training.batch_size,
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
     )
 
-    # model.set_parameters(
-    #     "logs/CoRL2024 L2T Digit/PPO 200Hz new reward/2024-05-23-10-02-36-fqe3qrto/best_model.zip"
-    # )
+    model.set_parameters(
+        "logs/CoRL2024 L2T Digit/PPO 200Hz new ref_traj/2024-05-21-18-24-20-78192px0/best_model.zip"
+    )
 
     # evaluate_policy(model, eval_env, n_eval_episodes=5, render=True)
 
     # Train the model
     model.learn(
-        total_timesteps=int(1e7),
+        total_timesteps=cfg.training.total_timesteps,
         progress_bar=True,
         log_interval=10,
         callback=CallbackList([eval_callback, wandb_callback]),

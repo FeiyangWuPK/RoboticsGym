@@ -8,41 +8,47 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 import numpy as np
-from cfg.base.base_config import BaseConfig,ConfigObj
-from cfg.digit_env_config import DigitEnvConfig
+from roboticsgym.envs.cfg.base.base_config import BaseConfig, ConfigObj
+from roboticsgym.envs.cfg.digit_env_config import DigitEnvConfig
+
 
 class DigitTestEnvConfig(DigitEnvConfig):
     class env(DigitEnvConfig.env):
         max_time = 5.0  # every this time, the env is reset ans command is updated
+
     class commands(DigitEnvConfig.commands):
-        resampling_time = 5. # commands are updated every reset
+        resampling_time = 5.0  # commands are updated every reset
+
         class ranges(DigitEnvConfig.commands.ranges):
             cut_off = 0.1
-        class samples(ConfigObj): # this can be adjusted before passed to environment
-            x_vel = np.array([0.])
-            y_vel = np.array([0.]) # 0.5
-            ang_vel = np.array([0.])
+
+        class samples(ConfigObj):  # this can be adjusted before passed to environment
+            x_vel = np.array([0.0])
+            y_vel = np.array([0.0])  # 0.5
+            ang_vel = np.array([0.0])
 
             # x_vel = np.array([0., 0])
             # y_vel = np.array([0.,0.]) # 0.5
             # ang_vel = np.array([0.,0])
 
     class control(DigitEnvConfig.control):
-        mbc_control = True # if true, mbc action is used in def step()
+        mbc_control = True  # if true, mbc action is used in def step()
 
-    class terrain(DigitEnvConfig.terrain): # this can be adjusted before passed to environment
-        terrain_type = "flat" # flat, test_rough, rough_random???
-        terrain_path = "terrain_info"        
+    class terrain(
+        DigitEnvConfig.terrain
+    ):  # this can be adjusted before passed to environment
+        terrain_type = "flat"  # flat, test_rough, rough_random???
+        terrain_path = "terrain_info"
         terrain_level_schedule = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
         which_terrain = 0
-    
-    class vis_record(DigitEnvConfig.vis_record): #TODO: change this
-        visualize = False # should set to false when training
-        record = False # should visualize true
+
+    class vis_record(DigitEnvConfig.vis_record):  # TODO: change this
+        visualize = False  # should set to false when training
+        record = False  # should visualize true
         record_fps = 15
-    
+
     class domain_randomization(DigitEnvConfig.domain_randomization):
         is_true = False
-    
+
     class obs_noise(DigitEnvConfig.obs_noise):
         is_true = False

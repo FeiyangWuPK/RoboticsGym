@@ -1,13 +1,13 @@
 env:
-  name: DigitFKHY-v1
+  name: Digit-v1
   n_envs: 24
   seed: 42
 
 training:
-  total_timesteps: 40000000
+  total_timesteps: 100_000_000
   learning_rate: 0.0003
   buffer_size: 1000000
-  batch_size: 512
+  batch_size: 256
   learning_starts: 100
   train_freq: 1
   gradient_steps: 1
@@ -16,7 +16,7 @@ training:
 
 wandb:
   project: "CoRL2024 L2T Digit"
-  run_name: "L2T with 200hz, DR0.1"
+  run_name: "PPO 200Hz New PD Gain"
   group: "Digit"
   entity: "fywu"
   sync_tensorboard: True

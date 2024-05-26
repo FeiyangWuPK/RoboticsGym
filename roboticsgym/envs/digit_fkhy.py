@@ -12,10 +12,17 @@ import mujoco_viewer
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
+import gymnasium as gym
 import time
 
 from roboticsgym.envs.reference_trajectories.loadDigit import DigitTrajectory
 from roboticsgym.envs.cfg.digit_env_config import DigitEnvConfig
+from roboticsgym.envs.cfg.test.vel_track_test.vel_track_test_env_config import (
+    DigitTestEnvConfig,
+)
+from roboticsgym.envs.cfg.test.vel_track_test.vel_track_test_config import (
+    DigitTestConfig,
+)
 
 
 DEFAULT_CAMERA_CONFIG = {
@@ -85,950 +92,6 @@ class StepType(enum.IntEnum):
             return StepType.MID
 
 
-# reward for joint position difference
-def joint_pos_tracking(CurrJoint_pos, RefJoint_pos):
-    joint_pos_error = np.sum((CurrJoint_pos - RefJoint_pos) ** 2)
-    return np.exp(-5 * joint_pos_error)
-
-
-# reward for joint velocity difference
-def joint_vel_tracking(CurrJoint_vel, RefJoint_vel):
-    joint_pos_error = np.sum((CurrJoint_vel - RefJoint_vel) ** 2)
-    return np.exp(-0.1 * joint_pos_error)
-
-
-# reward for pelvis position difference
-def root_pos_tracking(Currbase_pos, Refbase_pos):
-    position_error = np.sum((Currbase_pos[:3] - Refbase_pos[:3]) ** 2)
-    rotation_error = np.sum((Currbase_pos[3:] - Refbase_pos[3:]) ** 2)
-    return np.exp(-20 * position_error - 10 * rotation_error)
-
-
-# reward for pelvis orientation difference
-def root_ori_tracking(Currbase_ori, Refbase_ori):
-    linear_vel_error = np.sum((Currbase_ori[:3] - Refbase_ori[:3]) ** 2)
-    angular_vel_error = np.sum((Currbase_ori[3:] - Refbase_ori[3:]) ** 2)
-    return np.exp(-2 * linear_vel_error - 0.2 * angular_vel_error)
-
-
-def lin_vel_tracking(lin_vel, command):
-    # Tracking of linear velocity commands (xy axes)
-    lin_vel_error = np.sum(np.square(command[:2] - lin_vel[:2]))
-    return np.exp(-lin_vel_error / 0.25)
-
-
-def ang_vel_tracking(ang_vel, command):
-    # Tracking of angular velocity commands (yaw)
-    ang_vel_error = np.square(command[2] - ang_vel[2])
-    return np.exp(-ang_vel_error / 0.25)
-
-
-def z_vel_penalty(lin_vel):
-    # Penalize z axis base linear velocity
-    return np.square(lin_vel[2])
-
-
-def roll_pitch_penalty(ang_vel):
-    # Penalize xy axes base angular velocity
-    return np.sum(np.square(ang_vel[:2]))
-
-
-def base_orientation_penalty(projected_gravity):
-    # Penalize non flat base orientation
-    return np.sum(np.square(projected_gravity[:2]))
-
-
-def torque_penalty(torque):
-    return np.sum(np.square(torque))
-
-
-def foot_lateral_distance_penalty(
-    rfoot_poses, lfoot_poses
-):  # TODO: check if this is correct
-    """
-    Get the closest distance between the two feet and make it into a penalty.
-    The given points are five key points in the feet.
-    Args:
-        rfoot_poses: [3,5]
-        lfoot_poses: [3,5]
-    """
-    assert rfoot_poses.shape == (3, 5) and lfoot_poses.shape == (
-        3,
-        5,
-    ), "foot poses should be 5x3"
-
-    distance0 = np.abs(rfoot_poses[1, 0] - lfoot_poses[1, 0])
-    distance1 = np.abs(rfoot_poses[1, 4] - lfoot_poses[1, 3])
-    distance2 = np.abs(rfoot_poses[1, 3] - lfoot_poses[1, 4])
-    distances = np.array([distance0, distance1, distance2])
-    closest_distance = np.min(distances)
-
-    # return (closest_distance<0.27) * closest_distance
-    return closest_distance < 0.13
-
-
-def swing_foot_fix_penalty(lfoot_grf, rfoot_grf, action):
-    """penalize if the toe joint changes from its fixed position in swing phase"""
-    # TODO: check if contact check is correct
-    lfoot_penalty = (lfoot_grf < 1) * np.sum(np.square(action[4:6]))
-    rfoot_penalty = (rfoot_grf < 1) * np.sum(np.square(action[10:12]))
-    return lfoot_penalty + rfoot_penalty
-
-
-class DigitEnv(MujocoEnv, utils.EzPickle):
-    metadata = {
-        "render_modes": ["human", "rgb_array", "depth_array"],
-        "render_fps": 200,
-    }
-
-    def __init__(
-        self,
-        cfg=DigitEnvConfig(),
-        log_dir="",
-        **kwargs,
-    ):
-
-        self.frame_skip = 10
-        dir_path, name = os.path.split(os.path.abspath(__file__))
-
-        MujocoEnv.__init__(
-            self,
-            os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml",
-            self.frame_skip,
-            observation_space=Box(
-                low=-np.inf, high=np.inf, shape=(106,), dtype=np.float64
-            ),
-            default_camera_config=DEFAULT_CAMERA_CONFIG,
-            **kwargs,
-        )
-
-        self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
-
-        self.home_path = os.path.dirname(os.path.realpath(__file__)) + "/../.."
-        self._env_id = None  # this should be set latter in training
-        self.log_dir = log_dir
-
-        # self.log_data = np.empty((0,13))
-        self.log_data = np.empty((0, 169))
-        self.log_ref_data = np.empty((0, 61 + 54 + 54))
-        self.log_time = []
-        self.log_data_flag = False
-
-        self.mujoco2ar_index = [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            6,
-            7,
-            8,
-            9,
-            16,
-            17,
-            18,
-            19,
-        ]
-        self.p_index = [
-            7,
-            8,
-            9,
-            14,
-            18,
-            23,
-            30,
-            31,
-            32,
-            33,
-            34,
-            35,
-            36,
-            41,
-            45,
-            50,
-            57,
-            58,
-            59,
-            60,
-        ]
-        self.v_index = [
-            6,
-            7,
-            8,
-            12,
-            16,
-            20,
-            26,
-            27,
-            28,
-            29,
-            30,
-            31,
-            32,
-            36,
-            40,
-            44,
-            50,
-            51,
-            52,
-            53,
-        ]
-
-        # self.ref_traj_dir = os.path.join(
-        #     self.home_path, "logs/record_vel_track/ref_traj_marching_3s"
-        # )
-
-        self.ref_trajectory = DigitTrajectory(
-            os.getcwd()
-            + "/roboticsgym/envs/"
-            + "reference_trajectories/digit_state_20240514.csv"
-        )
-        # self.ref_traj_dir = os.path.join(
-        #     self.home_path, "logs/record_vel_track/crocoddyl_ref_traj_taichi_3s"
-        # )
-
-        # self.ref_data = np.loadtxt(
-        #     self.ref_traj_dir, delimiter=",", dtype="str", comments=None
-        # )
-        # self.ref_data = self.ref_data[:, 1:].astype(float)  # data_without_time
-        # self.ref_qpos = self.ref_data[:, 0:61]
-        # self.ref_qvel = self.ref_data[:, 61:115]
-        # # self.ref_qacc = self.ref_data[:, 115:169]
-        # self.ref_motion_len = len(self.ref_data)
-
-        # self.ref_a_pos = self.ref_qpos[:, self.p_index]  # actuation reference position
-        # self.ref_a_vel = self.ref_qvel[:, self.v_index]
-        # # self.ref_a_acc = self.ref_qacc[:, self.v_index]
-        self.ref_qpos = self.ref_trajectory.qpos[14000:]
-        self.ref_qvel = self.ref_trajectory.qvel[14000:]
-        # print(self.ref_qpos.shape)
-        self.ref_a_pos = self.ref_qpos[14000:, self.p_index]
-        self.ref_a_vel = self.ref_qvel[14000:, self.v_index]
-        self.ref_motion_len = self.ref_qpos.shape[0]
-
-        self.ref_data = np.concatenate([self.ref_qpos, self.ref_qvel], axis=1)
-
-        # config
-        self.cfg = cfg
-
-        # constants
-        self.max_episode_length = int(
-            self.cfg.env.max_time / self.cfg.control.control_dt
-        )
-        self.num_substeps = (
-            int(self.cfg.control.control_dt / (self.cfg.env.sim_dt + 1e-8)) + 1
-        )
-        self.record_interval = int(
-            1 / (self.cfg.control.control_dt * self.cfg.vis_record.record_fps)
-        )
-
-        self.history_len = int(self.cfg.env.hist_len_s / self.cfg.control.control_dt)
-        self.hist_interval = int(
-            self.cfg.env.hist_interval_s / self.cfg.control.control_dt
-        )
-
-        self.resampling_time = int(
-            self.cfg.commands.resampling_time / self.cfg.control.control_dt
-        )
-
-        # control constants that can be changed with DR
-        self.kp = self.cfg.control.default_kp
-        self.kd = self.cfg.control.default_kd
-        self.default_geom_friction = None
-        self.motor_joint_friction = np.zeros(20)
-
-        # containers (should be reset in reset())
-        self.action = None  # only lower body
-        self.full_action = None  # full body
-        self.usr_command = None
-        self._step_cnt = None
-        self.max_traveled_distance = None
-
-        self.joint_pos_hist = None
-        self.joint_vel_hist = None
-
-        self._terminal = None
-        # NOTE: this is internal use only,
-        # for the outside terminal check, just use eps.last, eps.terminal,
-        # eps.timeout from "EnvStep" or use env_infos "done"
-        self.step_type = None
-
-        # containters (should be set at the _get_obs())
-        self.actor_obs = None
-        self.value_obs = None
-        self.robot_state = None
-
-        # containers (should be initialized in child classes)
-        self._interface = None
-        self.nominal_qvel = None
-        self.nominal_qpos = None
-        self.nominal_motor_offset = None
-        # self.model = None
-        # self.data = None
-        self._mbc = None
-
-        self.curr_terrain_level = None
-        # class that have functions to get and set lowlevel mujoco simulation parameters
-        self._interface = RobotInterface(
-            self.model,
-            self.data,
-            "right-toe-roll",
-            "left-toe-roll",
-            "right-foot",
-            "left-foot",
-        )
-        # self.nominal_qvel = self.data.qvel.ravel().copy()
-        # self.nominal_qpos = self.model.keyframe("standing").qpos
-
-        self._record_fps = round(2000 / self.frame_skip)
-
-        # setup viewer
-        self.frames = []  # this only be cleaned at the save_video function
-        self._viewer = None
-        if self.cfg.vis_record.visualize:
-            self.visualize()
-
-        # defualt geom friction
-        self.default_geom_friction = self.model.geom_friction.copy()
-        # pickling
-        kwargs = {
-            "cfg": self.cfg,
-            "log_dir": self.log_dir,
-        }
-        utils.EzPickle.__init__(self, **kwargs)
-
-    def reset(self, seed=None):
-        # domain randomization
-        if self.cfg.domain_randomization.is_true:
-            self.domain_randomization()
-        # TODO: debug everything here
-        # reset containers
-        self._step_cnt = 0
-
-        self.max_traveled_distance = 0.0
-
-        # reset containers that are used in _get_obs
-        self.joint_pos_hist = [np.zeros(12)] * self.history_len
-        self.joint_vel_hist = [np.zeros(12)] * self.history_len
-        self.action = np.zeros(self.cfg.env.act_dim, dtype=np.float32)
-        # self._sample_commands()
-
-        # setstate for initialization
-        self._reset_state()
-
-        # observe for next step
-        self._get_obs()  # call _reset_state and _sample_commands before this.
-
-        # start rendering
-        if self._viewer is not None and self.cfg.vis_record.visualize:
-            frame = self.render()
-            if frame is not None:
-                self.frames.append(frame)
-
-        return self.get_eps_info()
-
-    def step(self, action):
-
-        st_time = time.time()
-
-        # print('action',action)
-        if self._step_cnt is None:
-            raise RuntimeError("reset() must be called before step()!")
-
-        hat_target_pos = self.ref_a_pos[self._step_cnt]
-        # hat_target_vel = self.ref_a_vel[self._step_cnt]
-        # hat_target_acc = self.ref_a_acc[self._step_cnt]
-        # self.set_state(self.ref_qpos[self._step_cnt], self.ref_qvel[self._step_cnt])
-
-        adjusted_target_pos = hat_target_pos + action
-
-        start = time.time()
-        # control step
-        if self.cfg.control.control_type == "PD":
-            target_joint = adjusted_target_pos
-
-            if self.cfg.domain_randomization.is_true:
-                self.action_delay_time = int(
-                    np.random.uniform(0, self.cfg.domain_randomization.action_delay, 1)[
-                        0
-                    ]
-                    / self.cfg.env.sim_dt
-                )
-            self._pd_control(target_joint, np.zeros_like(target_joint))
-        if self.cfg.control.control_type == "T":
-            self._torque_control(self.full_action)
-
-        rewards, tot_reward = self._post_physics_step()
-
-        info = {
-            "time": time.time() - start,
-            "reward_info": rewards,
-            "tot_reward": tot_reward,
-            "next_value_obs": self.value_obs.copy(),
-            "curr_value_obs": None,
-            "robot_state": self.robot_state.copy(),
-            "done": self.step_type is StepType.TERMINAL
-            or self.step_type is StepType.TIMEOUT,
-        }
-
-        observation = self.actor_obs.copy()  # this observation is next state
-
-        end_time = time.time()
-        # if (end_time - st_time) > self.cfg.control.control_dt:
-        #     print("the simulation looks slower than it actually is")
-        if (end_time - st_time) < self.cfg.control.control_dt:
-            time.sleep(self.cfg.control.control_dt - (end_time - st_time))
-        if self.render_mode == "human":
-            self.render()
-        return (
-            observation,
-            tot_reward,
-            self.step_type is StepType.TERMINAL or self.step_type is StepType.TIMEOUT,
-            False,
-            info,
-        )
-
-    def get_eps_info(self):
-        """
-        return current environment's info.
-        These informations are used when starting the episodes. starting obeservations.
-        """
-        return self.actor_obs.copy(), dict(
-            curr_value_obs=self.value_obs.copy(), robot_state=self.robot_state.copy()
-        )
-
-    def _sample_commands(self):
-        """
-        sample command for env
-
-        """
-        # Random command sampling in reset
-        usr_command = np.zeros(3, dtype=np.float32)
-        usr_command[0] = np.random.uniform(
-            self.cfg.commands.ranges.x_vel_range[0],
-            self.cfg.commands.ranges.x_vel_range[1],
-        )
-
-        usr_command[1] = np.random.uniform(
-            self.cfg.commands.ranges.y_vel_range[0],
-            self.cfg.commands.ranges.y_vel_range[1],
-        )
-        usr_command[2] = np.random.uniform(
-            self.cfg.commands.ranges.ang_vel_range[0],
-            self.cfg.commands.ranges.ang_vel_range[1],
-        )
-
-        if abs(usr_command[0]) < self.cfg.commands.ranges.cut_off:
-            usr_command[0] = 0.0
-        if abs(usr_command[1]) < self.cfg.commands.ranges.cut_off:
-            usr_command[1] = 0.0
-        if abs(usr_command[2]) < self.cfg.commands.ranges.cut_off:
-            usr_command[2] = 0.0
-        self.usr_command = usr_command
-        # print("usr_command: ", self.usr_command)
-
-    def _set_state(self, qpos, qvel):
-        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
-        self.data.qpos[:] = qpos
-        self.data.qvel[:] = qvel
-
-    def _reset_state(self):
-        init_qpos = self.nominal_qpos.copy()
-        init_qvel = self.nominal_qvel.copy()
-        init_qpos[0:2] = self.env_origin[:2]
-
-        # dof randomized initialization
-        if self.cfg.reset_state.random_dof_reset:
-            init_qvel[:6] = init_qvel[:6] + np.random.normal(
-                0, self.cfg.reset_state.root_v_std, 6
-            )
-            for joint_name in self.cfg.reset_state.random_dof_names:
-                qposadr = self._interface.get_jnt_qposadr_by_name(joint_name)
-                qveladr = self._interface.get_jnt_qveladr_by_name(joint_name)
-                init_qpos[qposadr[0]] = init_qpos[qposadr[0]] + np.random.normal(
-                    0, self.cfg.reset_state.p_std
-                )
-                init_qvel[qveladr[0]] = init_qvel[qveladr[0]] + np.random.normal(
-                    0, self.cfg.reset_state.v_std
-                )
-
-        self._set_state(np.asarray(init_qpos), np.asarray(init_qvel))
-
-        # adjust so that no penetration
-        rfoot_poses = np.array(self._interface.get_rfoot_keypoint_pos())
-        lfoot_poses = np.array(self._interface.get_lfoot_keypoint_pos())
-        rfoot_poses = np.array(rfoot_poses)
-        lfoot_poses = np.array(lfoot_poses)
-
-        delta = np.max(
-            np.concatenate([0.0 - rfoot_poses[:, 2], 0.0 - lfoot_poses[:, 2]])
-        )
-        init_qpos[2] = init_qpos[2] + delta + 0.02
-
-        self._set_state(np.asarray(init_qpos), np.asarray(init_qvel))
-
-    def _torque_control(self, torque):
-        ratio = self._interface.get_gear_ratios().copy()
-        for _ in range(
-            self._num_substeps
-        ):  # this is open loop torque control. no feedback.
-            tau = [
-                (i / j) for i, j in zip(torque, ratio)
-            ]  # TODO: why divide by ratio..? This need to be checked
-            self._interface.set_motor_torque(tau)
-            self._interface.step()
-
-    def uploadGPU(self, hfieldid=None, meshid=None, texid=None):
-        # hfield
-        if hfieldid is not None:
-            mujoco.mjr_uploadHField(self.model, self._viewer.ctx, hfieldid)
-        # mesh
-        if meshid is not None:
-            mujoco.mjr_uploadMesh(self.model, self._viewer.ctx, meshid)
-        # texture
-        if texid is not None:
-            mujoco.mjr_uploadTexture(self.model, self._viewer.ctx, texid)
-
-    def _pd_control(self, target_pos, target_vel):
-        self._interface.set_pd_gains(self.kp, self.kd)
-        ratio = self._interface.get_gear_ratios().copy()
-        for cnt in range(self.num_substeps):  # this is PD feedback loop
-            if self.cfg.domain_randomization.is_true:
-                motor_vel = self._interface.get_act_joint_velocities()
-                motor_joint_friction = self.motor_joint_friction * np.sign(motor_vel)
-                if cnt < self.action_delay_time:
-                    tau = motor_joint_friction
-                    tau = [(i / j) for i, j in zip(tau, ratio)]
-                    self._interface.set_motor_torque(tau)
-                    self._interface.step()
-                else:
-                    tau = self._interface.step_pd(target_pos, target_vel)
-                    tau += motor_joint_friction
-                    tau = [(i / j) for i, j in zip(tau, ratio)]
-                    self._interface.set_motor_torque(tau)
-                    self._interface.step()
-            else:
-                tau = self._interface.step_pd(
-                    target_pos, target_vel
-                )  # this tau is joint space torque
-                tau = [(i / j) for i, j in zip(tau, ratio)]
-                self._interface.set_motor_torque(tau)
-                self._interface.step()
-
-    def _post_physics_step(self):
-
-        # observe for next step
-
-        self._get_obs()
-
-        self._is_terminal()
-
-        # TODO: debug reward function
-        rewards, tot_reward = self._compute_reward()
-
-        # visualize
-        if (
-            self._viewer is not None
-            and self._step_cnt % self.record_interval == 0
-            and self.cfg.vis_record.visualize
-            and self._step_cnt
-        ):
-            frame = self.render()
-            if frame is not None:
-                self.frames.append(frame)
-
-        self._step_cnt += int(self.frame_skip / 2)
-        self.step_type = StepType.get_step_type(
-            step_cnt=self._step_cnt,
-            max_episode_length=self.max_episode_length,
-            done=self._terminal,
-        )
-        if self.step_type in (StepType.TERMINAL, StepType.TIMEOUT):
-            self._step_cnt = None  # this becomes zero when reset is called
-
-        return rewards, tot_reward
-
-    def _get_obs(self):
-        """ "
-        update actor_obs, value_obs, robot_state, all the other states
-        make sure to call _reset_state and _sample_commands before this.
-
-        """
-        # TODO: check all the values
-
-        self.qpos = self.data.qpos.copy()
-        self.qvel = self.data.qvel.copy()
-        self.qacc = self.data.qacc.copy()
-
-        self._update_root_state()
-        self._update_joint_state()
-        self._update_joint_hist()
-        self._update_robot_state()
-
-        # log data in CSV file
-        if self.log_data_flag:
-            self.log_time.append(str(datetime.datetime.now()))
-            # self.log_data = np.vstack([ self.log_data, np.append(self.qpos[:7], self.qvel[:6]) ])
-            self.log_ref_data = np.vstack(
-                [
-                    self.log_ref_data,
-                    np.concatenate((self.qpos, self.qvel, self.qacc), axis=0),
-                ]
-            )
-
-        # update observations
-        self.projected_gravity = self._interface.get_projected_gravity_vec()
-        self.noisy_projected_gravity = self.projected_gravity + np.random.normal(
-            0, self.cfg.obs_noise.projected_gravity_std, 3
-        )
-        self.noisy_projected_gravity = self.noisy_projected_gravity / np.linalg.norm(
-            self.noisy_projected_gravity
-        )
-        self._update_actor_obs()
-        # self.value_obs = self.actor_obs.copy() # TODO: apply dreamwaq
-        self._update_critic_obs()
-
-        # update traveled distance
-        self.max_traveled_distance = max(
-            self.max_traveled_distance, np.linalg.norm(self.root_xy_pos[:2])
-        )
-
-        # not sure if copy is needed but to make sure...
-
-    def _update_root_state(self):
-        # root states
-        self.root_xy_pos = self.qpos[0:2]
-        self.root_world_height = self.qpos[2]
-        self.root_quat = self.qpos[3:7]
-        roll, pitch, yaw = tf3.euler.quat2euler(self.root_quat, axes="sxyz")
-        base_rot = tf3.euler.euler2mat(0, 0, yaw, "sxyz")
-        self.root_lin_vel = np.transpose(base_rot).dot(self.qvel[0:3])
-        self.root_ang_vel = np.transpose(base_rot).dot(self.qvel[3:6])
-        self.noisy_root_ang_vel = self.root_ang_vel + np.random.normal(
-            0, self.cfg.obs_noise.ang_vel_std, 3
-        )
-        self.noisy_root_lin_vel = self.root_lin_vel + np.random.normal(
-            0, self.cfg.obs_noise.lin_vel_std, 3
-        )
-
-    def _update_joint_state(self):
-        # motor states
-        self.motor_pos = self._interface.get_act_joint_positions()
-        self.motor_vel = self._interface.get_act_joint_velocities()
-        # passive hinge states
-        self.passive_hinge_pos = self._interface.get_passive_hinge_positions()
-        self.passive_hinge_vel = self._interface.get_passive_hinge_velocities()
-
-        self.noisy_motor_pos = self.motor_pos + np.random.normal(
-            0, self.cfg.obs_noise.dof_pos_std, 20
-        )
-        self.noisy_motor_vel = self.motor_vel + np.random.normal(
-            0, self.cfg.obs_noise.dof_vel_std, 20
-        )
-        self.noisy_passive_hinge_pos = self.passive_hinge_pos + np.random.normal(
-            0, self.cfg.obs_noise.dof_pos_std, 10
-        )
-        self.noisy_passive_hinge_vel = self.passive_hinge_vel + np.random.normal(
-            0, self.cfg.obs_noise.dof_vel_std, 10
-        )
-
-    def _update_joint_hist(self):
-        # joint his buffer update
-        self.joint_pos_hist.pop(0)
-        self.joint_vel_hist.pop(0)
-        if self.cfg.obs_noise.is_true:
-            self.joint_pos_hist.append(
-                np.array(self.noisy_motor_pos)[self.cfg.control.lower_motor_index]
-            )
-            self.joint_vel_hist.append(
-                np.array(self.noisy_motor_vel)[self.cfg.control.lower_motor_index]
-            )
-        else:
-            self.joint_pos_hist.append(
-                np.array(self.motor_pos)[self.cfg.control.lower_motor_index]
-            )
-            self.joint_vel_hist.append(
-                np.array(self.motor_vel)[self.cfg.control.lower_motor_index]
-            )
-        assert len(self.joint_vel_hist) == self.history_len
-
-        # assign joint history obs
-        self.joint_pos_hist_obs = []
-        self.joint_vel_hist_obs = []
-        for i in range(int(self.history_len / self.hist_interval)):
-            self.joint_pos_hist_obs.append(self.joint_pos_hist[i * self.hist_interval])
-            self.joint_vel_hist_obs.append(self.joint_vel_hist[i * self.hist_interval])
-        assert len(self.joint_pos_hist_obs) == 3
-        self.joint_pos_hist_obs = np.concatenate(self.joint_pos_hist_obs).flatten()
-        self.joint_vel_hist_obs = np.concatenate(self.joint_vel_hist_obs).flatten()
-
-    def _update_robot_state(self):
-        body_height = self.root_world_height
-        root_pos = np.array([self.root_xy_pos[0], self.root_xy_pos[1], body_height])
-        self.robot_state = np.concatenate(
-            [
-                root_pos,  # 2 0~3
-                self.root_quat,  # 4 3~7
-                self.root_lin_vel,  # 3 7~10
-                self.root_ang_vel,  # 3 10~13
-                self.motor_pos,  # 20 13~33
-                self.passive_hinge_pos,  # 10 33~43
-                self.motor_vel,  # 20     43~63
-                self.passive_hinge_vel,  # 10 63~73
-            ]
-        )
-
-    def _update_actor_obs(self):
-        if self.cfg.obs_noise.is_true:
-            self.actor_obs = (
-                np.concatenate(
-                    [
-                        self.noisy_root_lin_vel,  # 3
-                        self.noisy_root_ang_vel,  # 3
-                        #  self.noisy_projected_gravity, # 3
-                        self.qpos[:7],
-                        self.qpos[self.p_index],
-                        self.qvel[self.v_index],  # 47
-                        self.ref_qpos[self._step_cnt, :7],
-                        self.ref_qvel[self._step_cnt, :6],
-                        self.ref_a_pos[self._step_cnt],
-                        self.ref_a_vel[self._step_cnt],  # 53
-                        # self.action.copy(), # 12
-                        # self.joint_pos_hist_obs,
-                        # self.joint_vel_hist_obs,
-                    ]
-                )
-                .astype(np.float64)
-                .flatten()
-            )
-        else:
-            self.actor_obs = (
-                np.concatenate(
-                    [
-                        self.root_lin_vel,  # 3
-                        self.root_ang_vel,  # 3
-                        # self.projected_gravity, # 3
-                        self.qpos[:7],  # 7
-                        self.qpos[self.p_index],  # 20
-                        self.qvel[self.v_index],  # 20
-                        self.ref_qpos[self._step_cnt, :7],
-                        self.ref_qvel[self._step_cnt, :6],
-                        self.ref_a_pos[self._step_cnt],
-                        self.ref_a_vel[self._step_cnt],  # 53
-                        # self.action.copy(), # 12
-                        # self.joint_pos_hist_obs,
-                        # self.joint_vel_hist_obs,
-                    ]
-                )
-                .astype(np.float64)
-                .flatten()
-            )
-
-        assert self.actor_obs.shape[0] == self.cfg.env.obs_dim
-
-    def _update_critic_obs(self):
-        self.value_obs = (
-            np.concatenate(
-                [
-                    self.root_lin_vel * self.cfg.normalization.obs_scales.lin_vel,  # 3
-                    self.root_ang_vel * self.cfg.normalization.obs_scales.ang_vel,  # 3
-                    # self.projected_gravity, # 3
-                    self.qpos[:7],
-                    self.qpos[self.p_index],
-                    self.qvel[self.v_index],
-                    self.ref_qpos[self._step_cnt, :7],
-                    self.ref_qvel[self._step_cnt, :6],
-                    self.ref_a_pos[self._step_cnt],
-                    self.ref_a_vel[self._step_cnt],  # 53
-                    # self.action.copy(), # 12
-                    # self.kp,
-                    # self.kd,
-                ]
-            )
-            .astype(np.float64)
-            .flatten()
-        )
-
-        assert self.value_obs.shape[0] == self.cfg.env.value_obs_dim
-
-    def _is_terminal(self):
-        # self_collision_check = self._interface.check_self_collisions()
-        # bad_collision_check = self._interface.check_bad_collisions()
-        # lean_check = self._interface.check_body_lean()  # TODO: no lean when RL training. why...?
-        # terminate_conditions = {"self_collision_check": self_collision_check,
-        #                         "bad_collision_check": bad_collision_check,
-        #                         # "body_lean_check": lean_check,
-        #                         }
-
-        root_vel_crazy_check = (
-            (self.root_lin_vel[0] > 1.5)
-            or (self.root_lin_vel[1] > 1.5)
-            or (self.root_lin_vel[2] > 1.0)
-        )  # as in digit controller
-        self_collision_check = self._interface.check_self_collisions()
-        body_lean_check = self._interface.check_body_lean()
-        ref_traj_step_check = self._step_cnt > self.ref_motion_len - 3
-
-        terminate_conditions = {
-            "root_vel_crazy_check": root_vel_crazy_check,
-            "self_collision_check": self_collision_check,
-            "body_lean_check": body_lean_check,
-            "ref_traj_step_check": ref_traj_step_check,
-        }
-
-        self._terminal = True in terminate_conditions.values()
-
-    def _compute_reward(self):
-        # the states are after stepping.
-
-        joint_pos_tracking_reward = joint_pos_tracking(
-            self.qpos[7:], self.ref_qpos[self._step_cnt, 7:]
-        )
-        joint_vel_tracking_reward = joint_vel_tracking(
-            self.qvel[6:], self.ref_qvel[self._step_cnt, 6:]
-        )
-        root_pos_tracking_reward = root_pos_tracking(
-            self.qpos[:7], self.ref_qpos[self._step_cnt, :7]
-        )
-        root_ori_tracking_reward = root_ori_tracking(
-            self.qvel[:6], self.ref_qvel[self._step_cnt, :6]
-        )
-
-        # termination_reward = -1.0 if self._terminal else 0.0
-
-        rewards_tmp = {
-            "joint_pos_tracking": joint_pos_tracking_reward,
-            "joint_vel_tracking": joint_vel_tracking_reward,
-            "root_pos_tracking": root_pos_tracking_reward,
-            "root_ori_tracking": root_ori_tracking_reward,
-        }
-        rewards = {}
-        tot_reward = 0.0
-        for key in rewards_tmp.keys():
-            rewards[key] = getattr(self.cfg.rewards.scales, key) * rewards_tmp[key]
-            tot_reward += rewards[key]
-
-        return rewards, tot_reward
-
-    """
-    Visualization Code
-    """
-
-    def close(self):
-        if self._viewer is not None:
-            self._viewer.close()
-            self._viewer = None
-
-    def visualize(self):
-        """Creates a visualization of the environment."""
-        assert self.cfg.vis_record.visualize, "you should set visualize flag to true"
-        assert self._viewer is None, "there is another viewer"
-        # if self._viewer is not None:
-        #     #     self._viewer.close()
-        #     #     self._viewer = None
-        #     return
-        if self.cfg.vis_record.record:
-            self._viewer = mujoco_viewer.MujocoViewer(
-                self.model, self.data, "offscreen"
-            )
-        else:
-            self._viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
-        self.viewer_setup()
-
-    # def viewer_setup(self):
-    #     self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-    #     self._viewer.cam.fixedcamid = 0
-    #     self._viewer.cam.distance = self.model.stat.extent * 1.5
-    #     self._viewer.cam.lookat[2] = 0.0
-    #     self._viewer.cam.lookat[0] = 0
-    #     self._viewer.cam.lookat[1] = 0.0
-    #     self._viewer.cam.azimuth = 180
-    #     self._viewer.cam.distance = 5
-    #     self._viewer.cam.elevation = -10
-    #     self._viewer.vopt.geomgroup[0] = 1
-    #     self._viewer._render_every_frame = True
-    #     # self.viewer._run_speed *= 20
-    #     self._viewer._contacts = True
-    #     self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = (
-    #         self._viewer._contacts
-    #     )
-    #     self._viewer.vopt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = (
-    #         self._viewer._contacts
-    #     )
-    def viewer_setup(self):
-        assert self.viewer is not None
-        for key, value in DEFAULT_CAMERA_CONFIG.items():
-            if isinstance(value, np.ndarray):
-                getattr(self.viewer.cam, key)[:] = value
-            else:
-                setattr(self.viewer.cam, key, value)
-
-    # def viewer_is_paused(self):
-    #     return self._viewer._paused
-
-    # def render(self):
-    #     assert self._viewer is not None
-    #     if self.cfg.vis_record.record:
-    #         return self._viewer.read_pixels(camid=0)
-    #     else:
-    #         self._viewer.render()
-    #         return None
-
-    def save_video(self, name):
-        assert self.cfg.vis_record.record
-        assert self.log_dir is not None
-        assert self._viewer is not None
-        home_path = os.path.dirname(os.path.realpath(__file__)) + "/.."
-        video_dir = os.path.join(
-            os.path.join(home_path, "logs/record_vel_track/", "video")
-        )
-        os.makedirs(video_dir, exist_ok=True)
-        video_path = os.path.join(video_dir, name + ".mp4")
-        command_path = os.path.join(video_dir, name + ".txt")
-        f = open(command_path, "w")
-        f.write(str(self.usr_command))
-        f.close()
-        fourcc = cv2.VideoWriter_fourcc(*"MP4V")
-        video_writer = cv2.VideoWriter(
-            video_path,
-            fourcc,
-            self._record_fps,
-            (self.frames[0].shape[1], self.frames[0].shape[0]),
-        )
-        for frame in self.frames:
-            video_writer.write(frame)
-        video_writer.release()
-        self.clear_frames()
-
-    def clear_frames(self):
-        self.frames = []
-
-    def domain_randomization(self):
-
-        self.motor_joint_friction = np.random.uniform(
-            self.cfg.domain_randomization.joint_friction[0],
-            self.cfg.domain_randomization.joint_friction[1],
-            size=self.motor_joint_friction.shape,
-        )
-        self.kp = self.cfg.control.default_kp * np.random.uniform(
-            self.cfg.domain_randomization.kp_noise[0],
-            self.cfg.domain_randomization.kp_noise[1],
-            size=self.cfg.control.default_kp.shape,
-        )
-        self.kd = self.cfg.control.default_kd * np.random.uniform(
-            self.cfg.domain_randomization.kd_noise[0],
-            self.cfg.domain_randomization.kd_noise[1],
-            size=self.cfg.control.default_kd.shape,
-        )
-
-
 class RobotInterface(object):
     def __init__(
         self,
@@ -1062,7 +125,8 @@ class RobotInterface(object):
             "right-toe-roll",
             "right-heel-spring",
         ]
-
+        # mujoco_passive_hinge_names = ['left-shin', 'left-tarsus', 'left-heel-spring', 'left-toe-pitch', 'left-toe-roll',
+        # 'right-shin', 'right-tarsus', 'right-heel-spring', 'right-toe-pitch', 'right-toe-roll']
         mujoco_passive_hinge_names = []  #
         for joint_name in self.get_joint_names():
             if joint_name in passive_hinge_names:
@@ -1206,8 +270,7 @@ class RobotInterface(object):
     def get_motor_positions(self):
         """
         Returns position of actuators.
-        length means joint angle in case of hinge joint.
-        It must be used with get_act_joint_positions.
+        length means joint angle in case of hinge joint. It must be used with get_act_joint_positions.
         """
         return self.data.actuator_length.tolist()
 
@@ -1413,8 +476,7 @@ class RobotInterface(object):
 
     def get_body_vel(self, body_name, frame=0):
         """
-        Returns translational and rotational velocity of a body in body-centered frame,
-        world/local orientation.
+        Returns translational and rotational velocity of a body in body-centered frame, world/local orientation.
         """
         body_vel = np.zeros(6)
         body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
@@ -1547,11 +609,10 @@ class RobotInterface(object):
 
     def check_body_lean(self):
         rot_mat = self.data.xmat[1].copy()
-        return np.arccos(rot_mat[8]) * 180 / np.pi > 20
+        return np.arccos(rot_mat[8]) * 180 / np.pi > 30
 
     def get_projected_gravity_vec(self):
-        # xmat has global orientation of the object.
-        # https://github.com/google-deepmind/dm_control/issues/160
+        # xmat has global orientation of the object.https://github.com/google-deepmind/dm_control/issues/160
         rot_mat = self.data.xmat[
             1
         ]  # wXb -> index 0,3,6 ; wYb -> index 1,4,7 ; wZb -> index 2,5,8
@@ -1573,8 +634,8 @@ class RobotInterface(object):
         target_angles = self.current_pos_target
         target_speeds = self.current_vel_target
 
-        assert type(target_angles) is np.ndarray
-        assert type(target_speeds) is np.ndarray
+        assert type(target_angles) == np.ndarray
+        assert type(target_speeds) == np.ndarray
 
         curr_angles = self.get_act_joint_positions()
         curr_speeds = self.get_act_joint_velocities()
@@ -1591,7 +652,7 @@ class RobotInterface(object):
         self.current_vel_target = v.copy()
         target_speeds = self.current_vel_target
 
-        assert type(target_speeds) is np.ndarray
+        assert type(target_speeds) == np.ndarray
 
         curr_speeds = self.get_act_joint_velocities()
 
@@ -1626,19 +687,810 @@ class RobotInterface(object):
         mujoco.mj_step(self.model, self.data)
 
 
-class DigitEnvFlat(DigitEnv, utils.EzPickle):
+class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
+    metadata = {
+        "render_modes": ["human", "rgb_array", "depth_array"],
+        "render_fps": 200,
+    }
 
     def __init__(
         self,
         cfg=DigitEnvConfig(),
         log_dir="",
+        ref_traj_dir="",
+        task="walking_forward",
         **kwargs,
     ):
-        super().__init__(
-            cfg,
-            log_dir,
+
+        self.frame_skip = 10
+        dir_path, name = os.path.split(os.path.abspath(__file__))
+
+        MujocoEnv.__init__(
+            self,
+            os.getcwd() + "/roboticsgym/envs/xml/digit-v3-flat-noobject.xml",
+            self.frame_skip,
+            observation_space=Box(
+                low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
+            ),
+            default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
+
+        self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
+
+        # config
+        self.cfg = cfg
+        self.home_path = os.path.dirname(os.path.realpath(__file__)) + "/../.."
+        self._env_id = None  # this should be set latter in training
+        self.log_dir = log_dir
+        self.ref_traj_dir = (
+            "roboticsgym/envs/reference_trajectories/mujoco_ref_walking_5s"
+        )
+        self.task = task
+        self.kp = self.cfg.TASK_CONFIG[self.task].get("kp", [])
+        self.kd = self.cfg.TASK_CONFIG[self.task].get("kd", [])
+
+        self.log_data = np.empty((0, 61 + 54 + 12))
+        self.log_time = []
+        self.log_data_flag = False
+
+        self.stair_height = np.array([0.12])
+        self.stair_depth = np.array([0.29])
+
+        self.mujoco2ar_index = [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            6,
+            7,
+            8,
+            9,
+            16,
+            17,
+            18,
+            19,
+        ]
+        self.p_index = [
+            7,
+            8,
+            9,
+            14,
+            18,
+            23,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            41,
+            45,
+            50,
+            57,
+            58,
+            59,
+            60,
+        ]
+        self.v_index = [
+            6,
+            7,
+            8,
+            12,
+            16,
+            20,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            36,
+            40,
+            44,
+            50,
+            51,
+            52,
+            53,
+        ]
+        self.endeffector_index = [21, 41, 16, 36]
+
+        if self.ref_traj_dir is not None:
+
+            self.ref_data = np.loadtxt(
+                self.ref_traj_dir, delimiter=",", dtype="str", comments=None
+            )
+            self.ref_data = self.ref_data[:, 1:].astype(float)  # data_without_time
+            self.ref_qpos = self.ref_data[:, 0:61]
+            self.ref_qvel = self.ref_data[:, 61 : 61 + 54]
+            self.ref_ee_pos = self.ref_data[:, 61 + 54 : 61 + 54 + 12]
+            self.ref_motion_len = len(self.ref_data)
+
+            self.ref_a_pos = self.ref_qpos[
+                :, self.p_index
+            ]  # actuation reference position
+            self.ref_a_vel = self.ref_qvel[:, self.v_index]
+            # self.ref_a_acc = self.ref_qacc[:, self.v_index]
+
+        # constants
+        # self.max_episode_length = int(self.cfg.env.max_time / self.cfg.control.control_dt)
+        self.max_episode_length = self.ref_motion_len
+        self.num_substeps = (
+            int(self.cfg.control.control_dt / (self.cfg.env.sim_dt + 1e-8)) + 1
+        )
+        self.record_interval = int(
+            1 / (self.cfg.control.control_dt * self.cfg.vis_record.record_fps)
+        )
+
+        self.history_len = int(self.cfg.env.hist_len_s / self.cfg.control.control_dt)
+        self.hist_interval = int(
+            self.cfg.env.hist_interval_s / self.cfg.control.control_dt
+        )
+
+        self.resampling_time = int(
+            self.cfg.commands.resampling_time / self.cfg.control.control_dt
+        )
+
+        self.default_geom_friction = None
+        self.motor_joint_friction = np.zeros(20)
+
+        # containers (should be reset in reset())
+        self.action = None  # only lower body
+        self.full_action = None  # full body
+        self.adjusted_target_pos = None
+        self.usr_command = None
+        self._step_cnt = None
+        self.max_traveled_distance = None
+
+        self.joint_pos_hist = None
+        self.joint_vel_hist = None
+        # assert self.cfg.env.obs_dim - 70 == int(self.history_len / self.hist_interval) * 12 * 2 # lower motor joints only
+
+        # containers (should be set at the _post_physics_step())
+        self._terminal = None  # NOTE: this is internal use only, for the outside terminal check, just use eps.last, eps.terminal, eps.timeout from "EnvStep" or use env_infos "done"
+        self.step_type = None
+
+        # containters (should be set at the _get_obs())
+        self.actor_obs = None
+        self.value_obs = None
+        self.robot_state = None
+
+        # containers (should be initialized in child classes)
+        self._interface = None
+        self.nominal_qvel = None
+        self.nominal_qpos = None
+        self.nominal_motor_offset = None
+
+        self.curr_terrain_level = None
+
+    def reset(self, seed=None, options=None):
+        # domain randomization
+        if self.cfg.domain_randomization.is_true:
+            self.domain_randomization()
+        # TODO: debug everything here
+        # reset containers
+        self._step_cnt = 0
+
+        self.max_traveled_distance = 0.0
+
+        # reset containers that are used in _get_obs
+        self.joint_pos_hist = [np.zeros(12)] * self.history_len
+        self.joint_vel_hist = [np.zeros(12)] * self.history_len
+        self.action = np.zeros(self.cfg.env.act_dim, dtype=np.float32)
+        # self._sample_commands()
+
+        # setstate for initialization
+        self._reset_state()
+
+        # observe for next step
+        self._get_obs()  # call _reset_state and _sample_commands before this.
+
+        # start rendering
+        if self._viewer is not None and self.cfg.vis_record.visualize:
+            frame = self.render()
+            if frame is not None:
+                self.frames.append(frame)
+
+        # # reset mbc
+        # self._do_extra_in_reset() # self.robot_state should be updated before this by calling _get_obs
+
+        # self._step_assertion_check()
+
+        # log data at TIMEOUT
+        # if StepType.TIMEOUT and self.log_data_flag and (self.log_dir is not None):
+        #     # Writing to CSV file
+
+        #     np.savetxt(
+        #         self.log_dir,
+        #         np.column_stack((self.log_time, self.log_data)),
+        #         delimiter=",",
+        #         fmt="%s",
+        #         comments="",
+        #     )
+        # print(f'Data has been stored in {self.log_dir}')
+
+        # second return is for episodic info
+        # not sure if copy is needed but to make sure...
+        return self.get_eps_info()
+
+    def step(self, action):
+
+        st_time = time.time()
+        if self._step_cnt is None:
+            raise RuntimeError("reset() must be called before step()!")
+
+        self.joint_range = self._interface.get_act_joint_range()
+
+        # for tracking a reference trajectory
+        hat_target_pos = self.ref_a_pos[self._step_cnt]
+        hat_target_vel = self.ref_a_vel[self._step_cnt]
+        self.adjusted_target_pos = np.clip(
+            hat_target_pos + action, self.joint_range[0], self.joint_range[1]
+        )
+        self.action = self.adjusted_target_pos - hat_target_pos
+
+        # # for purerl baseline
+        # self.adjusted_target_pos = 0.5 * (action + 1) * (self.joint_range[1] - self.joint_range[0]) + self.joint_range[0]
+        # self.action = self.adjusted_target_pos
+
+        start = time.time()
+        # control step
+        if self.cfg.control.control_type == "PD":
+            target_joint = self.adjusted_target_pos
+            if self.cfg.domain_randomization.is_true:
+                self.action_delay_time = int(
+                    np.random.uniform(0, self.cfg.domain_randomization.action_delay, 1)
+                    / self.cfg.env.sim_dt
+                )
+            self._pd_control(target_joint, np.zeros_like(target_joint))
+        if self.cfg.control.control_type == "T":
+            self._torque_control(self.full_action)
+
+        rewards, tot_reward = self._post_physics_step()
+
+        info = {
+            "time": time.time() - start,
+            "reward_info": rewards,
+            "tot_reward": tot_reward,
+            "next_value_obs": self.value_obs.copy(),
+            "curr_value_obs": None,
+            "robot_state": self.robot_state.copy(),
+            "done": self.step_type is StepType.TERMINAL
+            or self.step_type is StepType.TIMEOUT,
+        }
+
+        observation = self.actor_obs.copy()  # this observation is next state
+        if self.render_mode == "human":
+            self.render()
+
+        # end_time = time.time()
+        # if (end_time - st_time) < self.cfg.control.control_dt:
+        #     time.sleep(self.cfg.control.control_dt - (end_time - st_time))
+
+        return (
+            observation,
+            tot_reward,
+            self.step_type is StepType.TERMINAL or self.step_type is StepType.TIMEOUT,
+            False,
+            info,
+        )
+
+    def get_eps_info(self):
+        """
+        return current environment's info.
+        These informations are used when starting the episodes. starting obeservations.
+        """
+        return self.actor_obs.copy(), dict(
+            curr_value_obs=self.value_obs.copy(), robot_state=self.robot_state.copy()
+        )
+
+    """ 
+    internal helper functions 
+    """
+
+    def _sample_commands(self):
+        """
+        sample command for env
+        make sure to call mbc.set_usr_command or mbc.reset after this. so that mbc's usr command is sync with env's
+        """
+        # Random command sampling in reset
+        usr_command = np.zeros(3, dtype=np.float32)
+        usr_command[0] = np.random.uniform(
+            self.cfg.commands.ranges.x_vel_range[0],
+            self.cfg.commands.ranges.x_vel_range[1],
+        )
+
+        usr_command[1] = np.random.uniform(
+            self.cfg.commands.ranges.y_vel_range[0],
+            self.cfg.commands.ranges.y_vel_range[1],
+        )
+        usr_command[2] = np.random.uniform(
+            self.cfg.commands.ranges.ang_vel_range[0],
+            self.cfg.commands.ranges.ang_vel_range[1],
+        )
+
+        if abs(usr_command[0]) < self.cfg.commands.ranges.cut_off:
+            usr_command[0] = 0.0
+        if abs(usr_command[1]) < self.cfg.commands.ranges.cut_off:
+            usr_command[1] = 0.0
+        if abs(usr_command[2]) < self.cfg.commands.ranges.cut_off:
+            usr_command[2] = 0.0
+        self.usr_command = usr_command
+        # print("usr_command: ", self.usr_command)
+
+    def _set_state(self, qpos, qvel, xpos):
+        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
+        self.data.qpos[:] = qpos
+        self.data.qvel[:] = qvel
+        self.data.xpos[:] = xpos
+        # mujoco.mj_forward(self.model, self.data)
+
+    def _reset_state(self):
+        raise NotImplementedError
+
+    def _torque_control(self, torque):
+        ratio = self._interface.get_gear_ratios().copy()
+        for _ in range(
+            self._num_substeps
+        ):  # this is open loop torque control. no feedback.
+            tau = [
+                (i / j) for i, j in zip(torque, ratio)
+            ]  # TODO: why divide by ratio..? This need to be checked
+            self._interface.set_motor_torque(tau)
+            self._interface.step()
+
+    def _pd_control(self, target_pos, target_vel):
+        self._interface.set_pd_gains(self.kp, self.kd)
+        ratio = self._interface.get_gear_ratios().copy()
+        for cnt in range(self.num_substeps):  # this is PD feedback loop
+            if self.cfg.domain_randomization.is_true:
+                motor_vel = self._interface.get_act_joint_velocities()
+                motor_joint_friction = self.motor_joint_friction * np.sign(motor_vel)
+                if cnt < self.action_delay_time:
+                    tau = motor_joint_friction
+                    tau = [(i / j) for i, j in zip(tau, ratio)]
+                    self._interface.set_motor_torque(tau)
+                    self._interface.step()
+                else:
+                    tau = self._interface.step_pd(target_pos, target_vel)
+                    tau += motor_joint_friction
+                    tau = [(i / j) for i, j in zip(tau, ratio)]
+                    self._interface.set_motor_torque(tau)
+                    self._interface.step()
+            else:
+                tau = self._interface.step_pd(
+                    target_pos, target_vel
+                )  # this tau is joint space torque
+                tau = [(i / j) for i, j in zip(tau, ratio)]
+                self._interface.set_motor_torque(tau)
+                self._interface.step()
+
+    def _post_physics_step(self):
+
+        # observe for next step
+        self._get_obs()
+        self._is_terminal()
+
+        # TODO: debug reward function
+        rewards, tot_reward = self._compute_reward()
+
+        # visualize
+        if (
+            self._viewer is not None
+            and self._step_cnt % self.record_interval == 0
+            and self.cfg.vis_record.visualize
+            and self._step_cnt
+        ):
+            frame = self.render()
+            if frame is not None:
+                self.frames.append(frame)
+
+        self._step_cnt += 1
+
+        self.step_type = StepType.get_step_type(
+            step_cnt=self._step_cnt,
+            max_episode_length=self.max_episode_length,
+            done=self._terminal,
+        )
+        if self.step_type in (StepType.TERMINAL, StepType.TIMEOUT):
+            self._step_cnt = None  # this becomes zero when reset is called
+
+        return rewards, tot_reward
+
+    def _get_obs(self):
+        """ "
+        update actor_obs, value_obs, robot_state, all the other states
+        make sure to call _reset_state and _sample_commands before this.
+        self._mbc is not reset when first call but it is okay for self._mbc.get_phase_variable(), self._mbc.get_domain(). check those functions.
+        """
+        # TODO: check all the values
+        self.qpos = self.data.qpos.copy()
+        self.qvel = self.data.qvel.copy()
+        self.qacc = self.data.qacc.copy()
+
+        self.digit_qpos = self.qpos[:61]
+        self.digit_qvel = self.qvel[:54]
+        self.digit_qacc = self.qacc[:54]
+
+        self.xpos = self.data.xpos.copy()
+
+        self._update_root_state()
+        self._update_joint_state()
+        self._update_joint_hist()
+        self._update_robot_state()
+
+        # log data in CSV file
+        if self.log_data_flag:
+            self.log_time.append(str(datetime.datetime.now()))
+            self.log_data = np.vstack(
+                [
+                    self.log_data,
+                    np.concatenate(
+                        (
+                            self.digit_qpos,
+                            self.digit_qvel,
+                            self.xpos[self.endeffector_index].reshape((12)),
+                        ),
+                        axis=0,
+                    ),
+                ]
+            )
+
+        # update observations
+        self.projected_gravity = self._interface.get_projected_gravity_vec()
+        self.noisy_projected_gravity = self.projected_gravity + np.random.normal(
+            0, self.cfg.obs_noise.projected_gravity_std, 3
+        )
+        self.noisy_projected_gravity = self.noisy_projected_gravity / np.linalg.norm(
+            self.noisy_projected_gravity
+        )
+        self._update_actor_obs()
+        # self.value_obs = self.actor_obs.copy() # TODO: apply dreamwaq
+        self._update_critic_obs()
+
+        # update traveled distance
+        self.max_traveled_distance = max(
+            self.max_traveled_distance, np.linalg.norm(self.root_xy_pos[:2])
+        )
+
+        # not sure if copy is needed but to make sure...
+
+    def _update_root_state(self):
+        # root states
+        self.root_xy_pos = self.qpos[0:2]
+        self.root_world_height = self.qpos[2]
+        self.root_quat = self.qpos[3:7]
+        roll, pitch, yaw = tf3.euler.quat2euler(self.root_quat, axes="sxyz")
+        base_rot = tf3.euler.euler2mat(0, 0, yaw, "sxyz")
+        self.root_lin_vel = np.transpose(base_rot).dot(self.qvel[0:3])
+        self.root_ang_vel = np.transpose(base_rot).dot(self.qvel[3:6])
+        self.noisy_root_ang_vel = self.root_ang_vel + np.random.normal(
+            0, self.cfg.obs_noise.ang_vel_std, 3
+        )
+        self.noisy_root_lin_vel = self.root_lin_vel + np.random.normal(
+            0, self.cfg.obs_noise.lin_vel_std, 3
+        )
+
+    def _update_joint_state(self):
+        # motor states
+        self.motor_pos = self._interface.get_act_joint_positions()
+        self.motor_vel = self._interface.get_act_joint_velocities()
+        # passive hinge states
+        self.passive_hinge_pos = self._interface.get_passive_hinge_positions()
+        self.passive_hinge_vel = self._interface.get_passive_hinge_velocities()
+
+        self.noisy_motor_pos = self.motor_pos + np.random.normal(
+            0, self.cfg.obs_noise.dof_pos_std, 20
+        )
+        self.noisy_motor_vel = self.motor_vel + np.random.normal(
+            0, self.cfg.obs_noise.dof_vel_std, 20
+        )
+        self.noisy_passive_hinge_pos = self.passive_hinge_pos + np.random.normal(
+            0, self.cfg.obs_noise.dof_pos_std, 10
+        )
+        self.noisy_passive_hinge_vel = self.passive_hinge_vel + np.random.normal(
+            0, self.cfg.obs_noise.dof_vel_std, 10
+        )
+
+    def _update_joint_hist(self):
+        # joint his buffer update
+        self.joint_pos_hist.pop(0)
+        self.joint_vel_hist.pop(0)
+        if self.cfg.obs_noise.is_true:
+            self.joint_pos_hist.append(
+                np.array(self.noisy_motor_pos)[self.cfg.control.lower_motor_index]
+            )
+            self.joint_vel_hist.append(
+                np.array(self.noisy_motor_vel)[self.cfg.control.lower_motor_index]
+            )
+        else:
+            self.joint_pos_hist.append(
+                np.array(self.motor_pos)[self.cfg.control.lower_motor_index]
+            )
+            self.joint_vel_hist.append(
+                np.array(self.motor_vel)[self.cfg.control.lower_motor_index]
+            )
+        assert len(self.joint_vel_hist) == self.history_len
+
+        # assign joint history obs
+        self.joint_pos_hist_obs = []
+        self.joint_vel_hist_obs = []
+        for i in range(int(self.history_len / self.hist_interval)):
+            self.joint_pos_hist_obs.append(self.joint_pos_hist[i * self.hist_interval])
+            self.joint_vel_hist_obs.append(self.joint_vel_hist[i * self.hist_interval])
+        assert len(self.joint_pos_hist_obs) == 3
+        self.joint_pos_hist_obs = np.concatenate(self.joint_pos_hist_obs).flatten()
+        self.joint_vel_hist_obs = np.concatenate(self.joint_vel_hist_obs).flatten()
+
+    def _update_robot_state(self):
+        """robot state is state used for MBC"""
+        # body_height = self.root_world_height - self._get_height(self.root_xy_pos[0] , self.root_xy_pos[1])
+        body_height = self.root_world_height
+        root_pos = np.array([self.root_xy_pos[0], self.root_xy_pos[1], body_height])
+        self.robot_state = np.concatenate(
+            [
+                root_pos,  # 2 0~3
+                self.root_quat,  # 4 3~7
+                self.root_lin_vel,  # 3 7~10
+                self.root_ang_vel,  # 3 10~13
+                self.motor_pos,  # 20 13~33
+                self.passive_hinge_pos,  # 10 33~43
+                self.motor_vel,  # 20     43~63
+                self.passive_hinge_vel,  # 10 63~73
+            ]
+        )
+
+    def _update_actor_obs(self):
+        # NOTE: make sure to call get_action from self._mbc so that phase_variable is updated
+        if self.cfg.obs_noise.is_true:
+            self.actor_obs = (
+                np.concatenate(
+                    [
+                        self.digit_qpos[:3],  # 3
+                        self.digit_qvel[:3],  # 3
+                        self.digit_qpos[self.p_index],  # 20
+                        self.digit_qvel[self.v_index],  # 20
+                        self.xpos[self.endeffector_index].reshape((12)),  # 12
+                        self.ref_qpos[self._step_cnt, :3],  # 3
+                        self.ref_qvel[self._step_cnt, :3],  # 3
+                        self.ref_a_pos[self._step_cnt],  # 20
+                        self.ref_a_vel[self._step_cnt],  # 20
+                        self.ref_ee_pos[self._step_cnt, :],  # 12
+                        self.action.copy(),  # 20
+                        # self.joint_pos_hist_obs,
+                        # self.joint_vel_hist_obs,
+                        # self.stair_height,
+                        # self.stair_depth,
+                    ]
+                )
+                .astype(np.float64)
+                .flatten()
+            )
+        else:
+            self.actor_obs = (
+                np.concatenate(
+                    [
+                        self.digit_qpos[:3],  # 3
+                        self.digit_qvel[:3],  # 3
+                        self.digit_qpos[self.p_index],  # 20
+                        self.digit_qvel[self.v_index],  # 20
+                        self.xpos[self.endeffector_index].reshape((12)),  # 12
+                        self.ref_qpos[self._step_cnt, :3],  # 3
+                        self.ref_qvel[self._step_cnt, :3],  # 3
+                        self.ref_a_pos[self._step_cnt],  # 20
+                        self.ref_a_vel[self._step_cnt],  # 20
+                        self.ref_ee_pos[self._step_cnt, :],  # 12
+                        self.action.copy(),  # 20
+                        # self.joint_pos_hist_obs,
+                        # self.joint_vel_hist_obs,
+                        # self.stair_height,
+                        # self.stair_depth,
+                    ]
+                )
+                .astype(np.float64)
+                .flatten()
+            )
+
+        assert self.actor_obs.shape[0] == self.cfg.env.obs_dim
+
+    def _update_critic_obs(self):
+        self.value_obs = (
+            np.concatenate(
+                [
+                    self.digit_qpos[:3],  # 3
+                    self.digit_qvel[:3],  # 3
+                    self.digit_qpos[self.p_index],  # 20
+                    self.digit_qvel[self.v_index],  # 20
+                    self.xpos[self.endeffector_index].reshape((12)),  # 12
+                    self.ref_qpos[self._step_cnt, :3],  # 3
+                    self.ref_qvel[self._step_cnt, :3],  # 3
+                    self.ref_a_pos[self._step_cnt],  # 20
+                    self.ref_a_vel[self._step_cnt],  # 20
+                    self.ref_ee_pos[self._step_cnt, :],  # 12
+                    self.action.copy(),  # 20
+                    # self.kp,
+                    # self.kd,
+                    # self.stair_height,
+                    # self.stair_depth,
+                ]
+            )
+            .astype(np.float32)
+            .flatten()
+        )
+
+        assert self.value_obs.shape[0] == self.cfg.env.value_obs_dim
+
+    def _do_extra_in_reset(self):
+        self._mbc.reset(
+            self.robot_state, self.usr_command
+        )  # get_obs should be called before this to update robot_state
+
+    def _step_assertion_check(self):
+        assert self._mbc.get_phase_variable() == 0.0
+        assert self._mbc.get_domain() == 1
+
+    def _is_terminal(self):
+
+        self.termination_conditions = self.cfg.TASK_CONFIG[self.task].get(
+            "termination_conditions", []
+        )
+
+        root_vel_crazy_check = (
+            (self.root_lin_vel[0] > 1.5)
+            or (self.root_lin_vel[1] > 1.5)
+            or (self.root_lin_vel[2] > 1.0)
+        )
+        self_collision_check = self._interface.check_self_collisions()
+        body_lean_check = self._interface.check_body_lean()
+        ref_traj_step_check = self._step_cnt > self.ref_motion_len - 3
+
+        # Prepare the context for condition evaluation
+        context = {
+            "root_vel_crazy_check": root_vel_crazy_check,
+            "self_collision_check": self_collision_check,
+            "body_lean_check": body_lean_check,
+            "ref_traj_step_check": ref_traj_step_check,
+        }
+
+        # Check the task-specific termination conditions
+        terminate_conditions = {
+            cond: context[cond] for cond in self.termination_conditions
+        }
+
+        # Determine if any condition is met
+        self._terminal = any(terminate_conditions.values())
+
+    def _compute_reward(self):
+
+        self.indices_to_keep_qpos = self.cfg.TASK_CONFIG[self.task].get(
+            "indices_to_keep_qpos", []
+        )
+        self.indices_to_keep_qvel = self.cfg.TASK_CONFIG[self.task].get(
+            "indices_to_keep_qvel", []
+        )
+        self.reward_functions = self.cfg.TASK_CONFIG[self.task].get(
+            "reward_functions", {}
+        )
+        self.reward_weights = self.cfg.TASK_CONFIG[self.task].get("reward_weights", {})
+
+        qpos_keep = np.zeros(len(self.digit_qpos), dtype=bool)
+        qpos_keep[self.indices_to_keep_qpos] = True
+        qvel_keep = np.zeros(len(self.digit_qvel), dtype=bool)
+        qvel_keep[self.indices_to_keep_qvel] = True
+
+        qpos_filt = self.digit_qpos[qpos_keep]
+        ref_qpos_filt = self.ref_qpos[self._step_cnt, qpos_keep]
+
+        qvel_filt = self.digit_qvel[qvel_keep]
+        ref_qvel_filt = self.ref_qvel[self._step_cnt, qvel_keep]
+
+        endeffector_filt = self.xpos[self.endeffector_index]
+        ref_ee_pos = self.ref_ee_pos[self._step_cnt, :].reshape((4, 3))
+
+        context = {
+            "qpos_filt": qpos_filt,
+            "ref_qpos_filt": ref_qpos_filt,
+            "qvel_filt": qvel_filt,
+            "ref_qvel_filt": ref_qvel_filt,
+            "endeffector_filt": endeffector_filt,
+            "ref_ee_pos": ref_ee_pos,
+            "self": self,  # Pass the instance to access methods like self._interface.get_lfoot_grf()
+        }
+
+        # Calculate individual rewards
+        rewards_tmp = {}
+        for reward_name, reward_info in self.reward_functions.items():
+            reward_func = reward_info["func"]
+            reward_args = [eval(arg, context) for arg in reward_info["args"]]
+            rewards_tmp[reward_name] = reward_func(*reward_args)
+
+        rewards = {}
+        total_reward = 0.0
+        for key, value in rewards_tmp.items():
+            rewards[key] = self.reward_weights.get(key, 0.0) * value
+            total_reward += rewards[key]
+
+        return rewards, total_reward
+
+    """
+    Visualization Code
+    """
+
+    def close(self):
+        if self._viewer is not None:
+            self._viewer.close()
+            self._viewer = None
+
+    def visualize(self):
+        """Creates a visualization of the environment."""
+        assert self.cfg.vis_record.visualize, "you should set visualize flag to true"
+        assert self._viewer is None, "there is another viewer"
+        # if self._viewer is not None:
+        #     #     self._viewer.close()
+        #     #     self._viewer = None
+        #     return
+        if self.cfg.vis_record.record:
+            self._viewer = mujoco_viewer.MujocoViewer(
+                self.model, self.data, "offscreen"
+            )
+        else:
+            self._viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
+        self.viewer_setup()
+
+    def viewer_setup(self):
+        assert self.viewer is not None
+        for key, value in DEFAULT_CAMERA_CONFIG.items():
+            if isinstance(value, np.ndarray):
+                getattr(self.viewer.cam, key)[:] = value
+            else:
+                setattr(self.viewer.cam, key, value)
+
+    def clear_frames(self):
+        self.frames = []
+
+    def domain_randomization(self):
+        # NOTE: the parameters in mjModel shouldn't be changed in runtime!
+        # self.model.geom_friction[:,0] = self.default_geom_friction[:,0] * np.random.uniform(self.cfg.domain_randomization.friction_noise[0],
+        #                                                                           self.cfg.domain_randomization.friction_noise[1],
+        #                                                                           size=self.default_geom_friction[:,0].shape)
+        self.motor_joint_friction = np.random.uniform(
+            self.cfg.domain_randomization.joint_friction[0],
+            self.cfg.domain_randomization.joint_friction[1],
+            size=self.motor_joint_friction.shape,
+        )
+        self.kp = self.kp * np.random.uniform(
+            self.cfg.domain_randomization.kp_noise[0],
+            self.cfg.domain_randomization.kp_noise[1],
+            size=self.kp.shape,
+        )
+        self.kd = self.kd * np.random.uniform(
+            self.cfg.domain_randomization.kd_noise[0],
+            self.cfg.domain_randomization.kd_noise[1],
+            size=self.kd.shape,
+        )
+
+
+class DigitEnvFlat(DigitEnvBase, utils.EzPickle):
+
+    def __init__(
+        self,
+        cfg=DigitTestEnvConfig(),
+        log_dir="",
+        ref_traj_dir="",
+        task="walking_forward",
+        **kwargs,
+    ):
+        super().__init__(cfg, log_dir, ref_traj_dir, task, **kwargs)
         assert (
             self.cfg.terrain.terrain_type == "flat"
         ), f"the terrain type should be flat. but got {self.cfg.terrain.terrain_type}"
@@ -1650,9 +1502,12 @@ class DigitEnvFlat(DigitEnv, utils.EzPickle):
         )
 
         # load model and data from xml
-        # path_to_xml_out = os.getcwd() + "/roboticsgym/envs/xml/digit_scene.xml"
+        # path_to_xml_out = (
+        #     os.getcwd() + "/roboticsgym/envs/xml/digit-v3-flat-noobject.xml",
+        # )
         # self.model = mujoco.MjModel.from_xml_path(path_to_xml_out)
         # self.data = mujoco.MjData(self.model)
+
         assert self.model.opt.timestep == self.cfg.env.sim_dt
 
         # class that have functions to get and set lowlevel mujoco simulation parameters
@@ -1666,87 +1521,21 @@ class DigitEnvFlat(DigitEnv, utils.EzPickle):
         )
         # nominal pos and standing pos
         # self.nominal_qpos = self.data.qpos.ravel().copy() # lets not use this. because nomial pos is weird
-        # self.nominal_qvel = self.data.qvel.ravel().copy()
-        # self.nominal_qpos = self.model.keyframe("standing").qpos
-        # self.nominal_qpos = np.array(
-        #     [
-        #         0.0000000e00,
-        #         -0.00000e-02,
-        #         1.03077151e00,
-        #         1.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         2.95267333e-01,
-        #         2.59242753e-03,
-        #         2.02006095e-01,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         3.63361699e-01,
-        #         -2.26981220e-02,
-        #         -3.15269005e-01,
-        #         -2.18936907e-02,
-        #         -4.38871903e-02,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         -9.96320522e-03,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         1.67022233e-02,
-        #         -8.88278765e-02,
-        #         -1.42914279e-01,
-        #         1.09086647e00,
-        #         5.59902988e-04,
-        #         -1.40124351e-01,
-        #         -2.95267333e-01,
-        #         2.59242753e-03,
-        #         -2.02006095e-01,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         -3.63361699e-01,
-        #         -2.26981220e-02,
-        #         3.15269005e-01,
-        #         -2.18936907e-02,
-        #         4.38871903e-02,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         -9.96320522e-03,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         0.00000000e00,
-        #         -1.67022233e-02,
-        #         8.88278765e-02,
-        #         1.42914279e-01,
-        #         -1.09086647e00,
-        #         -5.59902988e-04,
-        #         1.40124351e-01,
-        #     ]
-        # )
-
-        self.nominal_qpos, self.nominal_qvel = (
-            self.ref_qpos[0],
-            self.ref_qvel[0],
-        )
+        self.nominal_qvel = self.data.qvel.ravel().copy()
+        self.nominal_qpos = self.model.keyframe("standing").qpos
+        self.nominal_xpos = self.data.xpos.copy()
         self.nominal_motor_offset = self.nominal_qpos[
             self._interface.get_motor_qposadr()
         ]
 
         # self._mbc = MBCWrapper(
-        #     self.cfg, self.nominal_motor_offset, self.cfg.control.action_scale
+        #     self.cfg,
+        #     self.nominal_motor_offset,
+        #     self.cfg.control.action_scale,
+        #     self.task,
         # )
         self._mbc = None
-        self._record_fps = round(2000 / self.frame_skip)
+        self._record_fps = 15
         # setup viewer
         self.frames = []  # this only be cleaned at the save_video function
         self._viewer = None
@@ -1756,17 +1545,19 @@ class DigitEnvFlat(DigitEnv, utils.EzPickle):
         # defualt geom friction
         self.default_geom_friction = self.model.geom_friction.copy()
         # pickling
-        # kwargs = {
-        #     "cfg": self.cfg,
-        #     "log_dir": self.log_dir,
-        # }
-        self._reset_state()
+        kwargs = {
+            "cfg": self.cfg,
+            "log_dir": self.log_dir,
+            "ref_traj_dir": self.ref_traj_dir,
+            "task": self.task,
+        }
         utils.EzPickle.__init__(self, **kwargs)
 
     def _reset_state(self):
         init_qpos = self.nominal_qpos.copy()
         init_qvel = self.nominal_qvel.copy()
         init_qpos[0:2] = self.env_origin[:2]
+        init_xpos = self.nominal_xpos.copy()
 
         # dof randomized initialization
         if self.cfg.reset_state.random_dof_reset:
@@ -1783,7 +1574,13 @@ class DigitEnvFlat(DigitEnv, utils.EzPickle):
                     0, self.cfg.reset_state.v_std
                 )
 
-        self._set_state(np.asarray(init_qpos), np.asarray(init_qvel))
+        # # root direction randomize NOTE: don't do this when using mbc as expert. It mess up the target yaw computation
+        # init_qpos[3:7] = tf3.quaternions.mat2quat(tf3.euler.euler2mat(0, 0, np.random.uniform(-np.pi, np.pi)))
+        # p_index = [7, 8, 9, 14, 18, 23, 30, 31, 32, 33, 34, 35, 36, 41, 45, 50, 57, 58, 59, 60]
+
+        self._set_state(
+            np.asarray(init_qpos), np.asarray(init_qvel), np.asarray(init_xpos)
+        )
 
         # adjust so that no penetration
         rfoot_poses = np.array(self._interface.get_rfoot_keypoint_pos())
@@ -1796,7 +1593,9 @@ class DigitEnvFlat(DigitEnv, utils.EzPickle):
         )
         init_qpos[2] = init_qpos[2] + delta + 0.02
 
-        self._set_state(np.asarray(init_qpos), np.asarray(init_qvel))
+        self._set_state(
+            np.asarray(init_qpos), np.asarray(init_qvel), np.asarray(init_xpos)
+        )
 
     def set_command(self, command):
         # this should be used before reset and self.is_command_fixed should be True
@@ -1816,3 +1615,50 @@ class DigitEnvFlat(DigitEnv, utils.EzPickle):
         # texture
         if texid is not None:
             mujoco.mjr_uploadTexture(self.model, self._viewer.ctx, texid)
+
+
+class DigitTestEnvFlat(DigitEnvFlat):
+    def __init__(
+        self,
+        cfg=DigitTestEnvConfig(),
+        log_dir="",
+        ref_traj_dir="",
+        task="walking_forward",
+        **kwargs,
+    ):
+        super().__init__(cfg, log_dir, ref_traj_dir, task, **kwargs)
+        self._reset_counter = 0
+        self._command_sample_counter = 0
+
+    def reset(self, seed=None, options=None):
+        ret_val = super().reset()
+        self._reset_counter += 1
+        return ret_val
+
+    def _sample_commands(self):
+        """
+        sample command for test env.
+        This should follow the fixed velocity schedule.
+        make sure to call mbc.set_usr_command or mbc.reset after this. so that mbc's usr command is sync with env's.
+        """
+        # Random command sampling in reset
+        usr_command = np.zeros(3, dtype=np.float32)
+        usr_command[0] = self.cfg.commands.samples.x_vel[
+            self._command_sample_counter % self.cfg.commands.samples.x_vel.shape[0]
+        ]
+        usr_command[1] = self.cfg.commands.samples.y_vel[
+            self._command_sample_counter % self.cfg.commands.samples.y_vel.shape[0]
+        ]
+        usr_command[2] = self.cfg.commands.samples.ang_vel[
+            self._command_sample_counter % self.cfg.commands.samples.ang_vel.shape[0]
+        ]
+        if abs(usr_command[0]) < self.cfg.commands.ranges.cut_off:
+            usr_command[0] = 0.0
+        if abs(usr_command[1]) < self.cfg.commands.ranges.cut_off:
+            usr_command[1] = 0.0
+        if abs(usr_command[2]) < self.cfg.commands.ranges.cut_off:
+            usr_command[2] = 0.0
+
+        self.usr_command = usr_command
+        self._command_sample_counter += 1
+        # print("usr_command: ", self.usr_command)
