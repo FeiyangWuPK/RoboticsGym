@@ -12,6 +12,7 @@ import mujoco_viewer
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
+from gymnasium import spaces
 import gymnasium as gym
 import time
 
@@ -699,25 +700,32 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         log_dir="",
         ref_traj_dir="",
         task="walking_forward",
+        domain_randomization_scale=0.0,
         **kwargs,
     ):
 
         self.frame_skip = 10
         dir_path, name = os.path.split(os.path.abspath(__file__))
-
+        self.observation_space = spaces.Dict(
+            {
+                "state": spaces.Box(
+                    low=-np.inf, high=np.inf, shape=(168,), dtype=np.float64
+                ),
+                "observation": spaces.Box(
+                    low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
+                ),
+            }
+        )
         MujocoEnv.__init__(
             self,
             os.getcwd() + "/roboticsgym/envs/xml/digit-v3-flat-noobject.xml",
             self.frame_skip,
-            observation_space=Box(
-                low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
-            ),
+            observation_space=self.observation_space,
             default_camera_config=DEFAULT_CAMERA_CONFIG,
             **kwargs,
         )
 
         self.action_space = Box(low=-1, high=1, shape=(20,), dtype=np.float32)
-
         # config
         self.cfg = cfg
         self.home_path = os.path.dirname(os.path.realpath(__file__)) + "/../.."
@@ -729,6 +737,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self.task = task
         self.kp = self.cfg.TASK_CONFIG[self.task].get("kp", [])
         self.kd = self.cfg.TASK_CONFIG[self.task].get("kd", [])
+        self.domain_randomization_scale = domain_randomization_scale
 
         self.log_data = np.empty((0, 61 + 54 + 12))
         self.log_time = []
@@ -865,20 +874,41 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self._terminal = None  # NOTE: this is internal use only, for the outside terminal check, just use eps.last, eps.terminal, eps.timeout from "EnvStep" or use env_infos "done"
         self.step_type = None
 
-        # containters (should be set at the _get_obs())
         self.actor_obs = None
         self.value_obs = None
         self.robot_state = None
 
         # containers (should be initialized in child classes)
-        self._interface = None
-        self.nominal_qvel = None
-        self.nominal_qpos = None
-        self.nominal_motor_offset = None
+        self._interface = RobotInterface(
+            self.model,
+            self.data,
+            "right-toe-roll",
+            "left-toe-roll",
+            "right-foot",
+            "left-foot",
+        )
+        # nominal pos and standing pos
+        self.nominal_qvel = self.data.qvel.ravel().copy()
+        self.nominal_qpos = self.model.keyframe("standing").qpos
+        self.nominal_xpos = self.data.xpos.copy()
+        self.nominal_motor_offset = self.nominal_qpos[
+            self._interface.get_motor_qposadr()
+        ]
+
+        # defualt geom friction
+        self.default_geom_friction = self.model.geom_friction.copy()
+        # pickling
+        kwargs = {
+            "cfg": self.cfg,
+            "log_dir": self.log_dir,
+            "ref_traj_dir": self.ref_traj_dir,
+            "task": self.task,
+        }
 
         self.curr_terrain_level = None
 
         self.camera_name = "side"
+        utils.EzPickle.__init__(self, **kwargs)
 
     def reset(self, seed=None, options=None):
         # domain randomization
@@ -900,13 +930,12 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self._reset_state()
 
         # observe for next step
-        obs = self._get_obs()
-        info = dict(
-            curr_value_obs=self.value_obs.copy(), robot_state=self.robot_state.copy()
-        )
+        self._update_obs()
+
+        info = dict(robot_state=self.robot_state.copy())
         # second return is for episodic info
         # not sure if copy is needed but to make sure...
-        return obs, info
+        return self._get_obs(), info
 
     def step(self, action):
         if self._step_cnt is None:
@@ -932,11 +961,12 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self._pd_control(target_joint, np.zeros_like(target_joint))
 
         # observe for next step
-        self._get_obs()
+        self._update_obs()
         self._is_terminal()
 
         rewards, tot_reward = self._compute_reward()
 
+        obs = self._get_obs()
         self._step_cnt += 1
 
         self.step_type = StepType.get_step_type(
@@ -948,21 +978,17 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             self._step_cnt = None
 
         info = {
-            "reward_info": rewards,
+            # "reward_info": rewards,
             "tot_reward": tot_reward,
-            "next_value_obs": self.value_obs.copy(),
-            "curr_value_obs": None,
-            "robot_state": self.robot_state.copy(),
             "done": self.step_type is StepType.TERMINAL
             or self.step_type is StepType.TIMEOUT,
         }
 
-        observation = self.actor_obs  # this observation is next state
         if self.render_mode == "human":
             self.viewer_render()
 
         return (
-            observation,
+            obs,
             tot_reward,
             self.step_type is StepType.TERMINAL or self.step_type is StepType.TIMEOUT,
             False,
@@ -974,7 +1000,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self.data.qpos[:] = qpos
         self.data.qvel[:] = qvel
         self.data.xpos[:] = xpos
-        # mujoco.mj_forward(self.model, self.data)
 
     def _reset_state(self):
         init_qpos = self.nominal_qpos.copy()
@@ -1053,7 +1078,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                 self._interface.set_motor_torque(tau)
                 self._interface.step()
 
-    def _get_obs(self):
+    def _update_obs(self):
         """ "
         update actor_obs, value_obs, robot_state, all the other states
         make sure to call _reset_state and _sample_commands before this.
@@ -1084,34 +1109,13 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             self.noisy_projected_gravity
         )
         self._update_actor_obs()
-        # self.value_obs = self.actor_obs.copy() # TODO: apply dreamwaq
-        self._update_critic_obs()
 
         # update traveled distance
         self.max_traveled_distance = max(
             self.max_traveled_distance, np.linalg.norm(self.root_xy_pos[:2])
         )
 
-        obs = np.concatenate(
-            [
-                self.digit_qpos[:3],  # 3
-                self.digit_qvel[:3],  # 3
-                self.digit_qpos[self.p_index],  # 20
-                self.digit_qvel[self.v_index],  # 20
-                self.xpos[self.endeffector_index].reshape((12)),  # 12
-                self.ref_qpos[self._step_cnt, :3],  # 3
-                self.ref_qvel[self._step_cnt, :3],  # 3
-                self.ref_a_pos[self._step_cnt],  # 20
-                self.ref_a_vel[self._step_cnt],  # 20
-                self.ref_ee_pos[self._step_cnt, :],  # 12
-                self.action.copy(),  # 20
-                # self.joint_pos_hist_obs,
-                # self.joint_vel_hist_obs,
-                # self.stair_height,
-                # self.stair_depth,
-            ]
-        ).astype(np.float64)
-
+        obs = self._get_obs()
         return obs
 
     def _update_root_state(self):
@@ -1199,83 +1203,121 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             ]
         )
 
-    def _update_actor_obs(self):
-        # NOTE: make sure to call get_action from self._mbc so that phase_variable is updated
-        if self.cfg.obs_noise.is_true:
-            self.actor_obs = (
-                np.concatenate(
-                    [
-                        self.digit_qpos[:3],  # 3
-                        self.digit_qvel[:3],  # 3
-                        self.digit_qpos[self.p_index],  # 20
-                        self.digit_qvel[self.v_index],  # 20
-                        self.xpos[self.endeffector_index].reshape((12)),  # 12
-                        self.ref_qpos[self._step_cnt, :3],  # 3
-                        self.ref_qvel[self._step_cnt, :3],  # 3
-                        self.ref_a_pos[self._step_cnt],  # 20
-                        self.ref_a_vel[self._step_cnt],  # 20
-                        self.ref_ee_pos[self._step_cnt, :],  # 12
-                        self.action.copy(),  # 20
-                        # self.joint_pos_hist_obs,
-                        # self.joint_vel_hist_obs,
-                        # self.stair_height,
-                        # self.stair_depth,
-                    ]
-                )
-                .astype(np.float64)
-                .flatten()
-            )
+    def set_domain_randomization_scale(self, domain_randomization_scale: float):
+        # print("setting new domain randomization scale")
+        self.domain_randomization_scale = domain_randomization_scale
+
+    def apply_randomization(self, obs: np.ndarray) -> np.ndarray:
+        if self.domain_randomization_scale == 0:
+            return obs
         else:
-            self.actor_obs = (
-                np.concatenate(
-                    [
-                        self.digit_qpos[:3],  # 3
-                        self.digit_qvel[:3],  # 3
-                        self.digit_qpos[self.p_index],  # 20
-                        self.digit_qvel[self.v_index],  # 20
-                        self.xpos[self.endeffector_index].reshape((12)),  # 12
-                        self.ref_qpos[self._step_cnt, :3],  # 3
-                        self.ref_qvel[self._step_cnt, :3],  # 3
-                        self.ref_a_pos[self._step_cnt],  # 20
-                        self.ref_a_vel[self._step_cnt],  # 20
-                        self.ref_ee_pos[self._step_cnt, :],  # 12
-                        self.action.copy(),  # 20
-                        # self.joint_pos_hist_obs,
-                        # self.joint_vel_hist_obs,
-                        # self.stair_height,
-                        # self.stair_depth,
-                    ]
-                )
-                .astype(np.float64)
-                .flatten()
+            # return obs.copy() + np.random.normal(
+            #     scale=self.domain_randomization_scale * np.abs(obs), size=obs.shape
+            # )
+            return obs.copy() + np.random.uniform(
+                low=-self.domain_randomization_scale * np.abs(obs),
+                high=self.domain_randomization_scale * np.abs(obs),
+                size=obs.shape,
             )
 
-        assert self.actor_obs.shape[0] == self.cfg.env.obs_dim
+    def _update_actor_obs(self):
+        self.actor_obs = np.concatenate(
+            [
+                self.digit_qpos[:3],  # 3
+                self.digit_qvel[:3],  # 3
+                self.digit_qpos[self.p_index],  # 20
+                self.digit_qvel[self.v_index],  # 20
+                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                self.ref_qpos[self._step_cnt, :3],  # 3
+                self.ref_qvel[self._step_cnt, :3],  # 3
+                self.ref_a_pos[self._step_cnt],  # 20
+                self.ref_a_vel[self._step_cnt],  # 20
+                self.ref_ee_pos[self._step_cnt, :],  # 12
+                self.action.copy(),  # 20
+                # self.joint_pos_hist_obs,
+                # self.joint_vel_hist_obs,
+                # self.stair_height,
+                # self.stair_depth,
+            ]
+        ).astype(np.float64)
 
-    def _update_critic_obs(self):
-        self.value_obs = (
-            np.concatenate(
-                [
-                    self.digit_qpos[:3],  # 3
-                    self.digit_qvel[:3],  # 3
-                    self.digit_qpos[self.p_index],  # 20
-                    self.digit_qvel[self.v_index],  # 20
-                    self.xpos[self.endeffector_index].reshape((12)),  # 12
-                    self.ref_qpos[self._step_cnt, :3],  # 3
-                    self.ref_qvel[self._step_cnt, :3],  # 3
-                    self.ref_a_pos[self._step_cnt],  # 20
-                    self.ref_a_vel[self._step_cnt],  # 20
-                    self.ref_ee_pos[self._step_cnt, :],  # 12
-                    self.action.copy(),  # 20
-                    # self.kp,
-                    # self.kd,
-                    # self.stair_height,
-                    # self.stair_depth,
-                ]
-            )
-            .astype(np.float32)
-            .flatten()
+        self.noisy_actor_obs = np.concatenate(
+            [
+                self.digit_qpos[:3],  # 3
+                self.digit_qvel[:3],  # 3
+                self.digit_qpos[self.p_index],  # 20
+                self.digit_qvel[self.v_index],  # 20
+                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                self.ref_qpos[self._step_cnt, :3],  # 3
+                self.ref_qvel[self._step_cnt, :3],  # 3
+                self.ref_a_pos[self._step_cnt],  # 20
+                self.ref_a_vel[self._step_cnt],  # 20
+                self.ref_ee_pos[self._step_cnt, :],  # 12
+                self.action.copy(),  # 20
+            ]
         )
+        self.noisy_actor_obs = self.apply_randomization(self.noisy_actor_obs)
+
+    def _get_obs(self):
+        """
+        Returns the observation.
+        """
+        # foot contact, not used because they can be none and forces are included anyway
+        # rfoot_floor_contact = np.array(self._interface.get_rfoot_floor_contacts())
+        # lfoot_floor_contact = np.array(self._interface.get_lfoot_floor_contacts())
+        # print("contqacts", rfoot_floor_contact, lfoot_floor_contact)
+        # foot forces
+        rfoot_force = self._interface.get_rfoot_grf()
+        lfoot_force = self._interface.get_lfoot_grf()
+        foot_forces = np.array([rfoot_force, lfoot_force]).flatten()
+
+        # foot velocities
+        rfoot_vel = np.array(self._interface.get_rfoot_keypoint_pos())
+        lfoot_vel = np.array(self._interface.get_lfoot_keypoint_pos())
+
+        self.obs = np.concatenate(
+            [
+                self.digit_qpos[:3],  # 3
+                self.digit_qvel[:3],  # 3
+                self.digit_qpos[self.p_index],  # 20
+                self.digit_qvel[self.v_index],  # 20
+                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                self.ref_qpos[self._step_cnt, :3],  # 3
+                self.ref_qvel[self._step_cnt, :3],  # 3
+                self.ref_a_pos[self._step_cnt],  # 20
+                self.ref_a_vel[self._step_cnt],  # 20
+                self.ref_ee_pos[self._step_cnt, :],  # 12
+                self.action.copy(),  # 20
+                # self.joint_pos_hist_obs,
+                # self.joint_vel_hist_obs,
+                # self.stair_height,
+                # self.stair_depth,
+                # rfoot_floor_contact.flatten(),  # 1
+                # lfoot_floor_contact.flatten(),  # 1
+                foot_forces,  # 3
+                rfoot_vel.flatten(),  # 3
+                lfoot_vel.flatten(),  # 3
+            ]
+        ).astype(np.float64)
+
+        self.noisy_obs = np.concatenate(
+            [
+                self.digit_qpos[:3],  # 3
+                self.digit_qvel[:3],  # 3
+                self.digit_qpos[self.p_index],  # 20
+                self.digit_qvel[self.v_index],  # 20
+                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                self.ref_qpos[self._step_cnt, :3],  # 3
+                self.ref_qvel[self._step_cnt, :3],  # 3
+                self.ref_a_pos[self._step_cnt],  # 20
+                self.ref_a_vel[self._step_cnt],  # 20
+                self.ref_ee_pos[self._step_cnt, :],  # 12
+                self.action.copy(),  # 20
+            ]
+        )
+
+        self.noisy_obs = self.apply_randomization(self.noisy_obs)
+        return {"state": self.obs, "observation": self.noisy_obs}
 
     def _is_terminal(self):
 
@@ -1439,31 +1481,3 @@ class DigitEnvFlat(DigitEnvBase, utils.EzPickle):
         self.env_origin = np.zeros(3)
 
         assert self.model.opt.timestep == self.cfg.env.sim_dt
-
-        # class that have functions to get and set lowlevel mujoco simulation parameters
-        self._interface = RobotInterface(
-            self.model,
-            self.data,
-            "right-toe-roll",
-            "left-toe-roll",
-            "right-foot",
-            "left-foot",
-        )
-        # nominal pos and standing pos
-        self.nominal_qvel = self.data.qvel.ravel().copy()
-        self.nominal_qpos = self.model.keyframe("standing").qpos
-        self.nominal_xpos = self.data.xpos.copy()
-        self.nominal_motor_offset = self.nominal_qpos[
-            self._interface.get_motor_qposadr()
-        ]
-
-        # defualt geom friction
-        self.default_geom_friction = self.model.geom_friction.copy()
-        # pickling
-        kwargs = {
-            "cfg": self.cfg,
-            "log_dir": self.log_dir,
-            "ref_traj_dir": self.ref_traj_dir,
-            "task": self.task,
-        }
-        utils.EzPickle.__init__(self, **kwargs)

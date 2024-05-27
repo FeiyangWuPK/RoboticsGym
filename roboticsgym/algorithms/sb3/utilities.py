@@ -755,6 +755,7 @@ class VideoEvalCallback(BaseCallback):
         eval_every: int = 100000,
         verbose: int = 0,
         eval_env: Optional[VecEnv] = None,
+        sub_prefix: str = "",
     ):
         super(VideoEvalCallback, self).__init__(verbose=verbose)
 
@@ -776,6 +777,7 @@ class VideoEvalCallback(BaseCallback):
             metadata = temp_env.metadata
 
         self.metadata = metadata
+        self.sub_prefix = sub_prefix
         print(self.metadata)
         # assert (
         #     self.eval_env.render_mode == "rgb_array"
@@ -804,7 +806,7 @@ class VideoEvalCallback(BaseCallback):
         video = np.stack(video)
         wandb.log(
             {
-                "results/video": wandb.Video(
+                f"results/video/{self.sub_prefix}": wandb.Video(
                     video,
                     fps=self.metadata.get("render_fps", 33),
                     format="mp4",

@@ -31,6 +31,8 @@ from stable_baselines3.her import HerReplayBuffer
 from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
+from stable_baselines3.common.utils import obs_as_tensor, safe_mean
+
 from stable_baselines3.common.policies import (
     ActorCriticCnnPolicy,
     ActorCriticPolicy,
@@ -56,11 +58,7 @@ from stable_baselines3.common.vec_env import (
     is_vecenv_wrapped,
 )
 
-from roboticsgym.algorithms.sb3.policies import (
-    Actor,
-    CnnPolicy,
-    MlpPolicy,
-    MultiInputPolicy,
+from roboticsgym.algorithms.sb3.policies_onpolicy import (
     L2TPolicy,
 )
 
@@ -76,7 +74,7 @@ except ImportError:
     # if the progress bar is used
     tqdm = None
 
-SelfL2TRL = TypeVar("SelfL2TRL", bound="L2TRL")
+SelfL2TRL_O = TypeVar("SelfL2TRL_O", bound="L2TRL_O")
 
 
 class L2TRL_O(OnPolicyAlgorithm):
@@ -139,6 +137,7 @@ class L2TRL_O(OnPolicyAlgorithm):
         "MlpPolicy": ActorCriticPolicy,
         "CnnPolicy": ActorCriticCnnPolicy,
         "MultiInputPolicy": MultiInputActorCriticPolicy,
+        "L2TPolicy": L2TPolicy,
     }
 
     def __init__(
@@ -167,6 +166,7 @@ class L2TRL_O(OnPolicyAlgorithm):
         tensorboard_log: Optional[str] = None,
         mixture_coeff: float = 0.2,
         policy_kwargs: Optional[Dict[str, Any]] = None,
+        student_policy_kwargs: Optional[Dict[str, Any]] = None,
         verbose: int = 0,
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
@@ -201,6 +201,8 @@ class L2TRL_O(OnPolicyAlgorithm):
             ),
         )
 
+        # print(f"observation_space: {self.observation_space}")
+
         # Sanity check, otherwise it will lead to noisy gradient and NaN
         # because of the advantage normalization
         if normalize_advantage:
@@ -234,12 +236,41 @@ class L2TRL_O(OnPolicyAlgorithm):
         self.target_kl = target_kl
         self.student_policy = student_policy
         self.mixture_coeff = mixture_coeff
+        self.student_policy_kwargs = (
+            {} if student_policy_kwargs is None else student_policy_kwargs
+        )
 
         if _init_setup_model:
             self._setup_model()
 
     def _setup_model(self) -> None:
-        super()._setup_model()
+        self._setup_lr_schedule()
+        self.set_random_seed(self.seed)
+
+        if self.rollout_buffer_class is None:
+            if isinstance(self.observation_space, spaces.Dict):
+                self.rollout_buffer_class = DictRolloutBuffer
+            else:
+                self.rollout_buffer_class = RolloutBuffer
+
+        self.rollout_buffer = self.rollout_buffer_class(
+            self.n_steps,
+            self.observation_space,  # type: ignore[arg-type]
+            self.action_space,
+            device=self.device,
+            gamma=self.gamma,
+            gae_lambda=self.gae_lambda,
+            n_envs=self.n_envs,
+            **self.rollout_buffer_kwargs,
+        )
+        self.policy = self.policy_class(  # type: ignore[assignment]
+            self.observation_space["state"],
+            self.action_space,
+            self.lr_schedule,
+            use_sde=self.use_sde,
+            **self.policy_kwargs,
+        )
+        self.policy = self.policy.to(self.device)
 
         # Initialize schedules for policy/value clipping
         self.clip_range = get_schedule_fn(self.clip_range)
@@ -252,7 +283,7 @@ class L2TRL_O(OnPolicyAlgorithm):
 
             self.clip_range_vf = get_schedule_fn(self.clip_range_vf)
 
-        self._init_student_policy()
+        self._init_student_policy(self.student_policy, self.student_policy_kwargs)
 
     def _init_student_policy(
         self,
@@ -277,30 +308,17 @@ class L2TRL_O(OnPolicyAlgorithm):
         )
         self.student_policy = self.student_policy.to(self.device)
 
-    def _setup_model(self) -> None:
-        super()._setup_model()
-
-        # Initialize schedules for policy/value clipping
-        self.clip_range = get_schedule_fn(self.clip_range)
-        if self.clip_range_vf is not None:
-            if isinstance(self.clip_range_vf, (float, int)):
-                assert self.clip_range_vf > 0, (
-                    "`clip_range_vf` must be positive, "
-                    "pass `None` to deactivate vf clipping"
-                )
-
-            self.clip_range_vf = get_schedule_fn(self.clip_range_vf)
-
-        self._init_student_policy()
-
     def train(self) -> None:
         """
         Update policy using the currently gathered rollout buffer.
         """
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
+        self.student_policy.set_training_mode(True)
         # Update optimizer learning rate
-        self._update_learning_rate(self.policy.optimizer)
+        self._update_learning_rate(
+            [self.policy.optimizer, self.student_policy.optimizer]
+        )
         # Compute current clip range
         clip_range = self.clip_range(self._current_progress_remaining)  # type: ignore[operator]
         # Optional: clip range for the value function
@@ -327,7 +345,7 @@ class L2TRL_O(OnPolicyAlgorithm):
                     self.policy.reset_noise(self.batch_size)
 
                 values, log_prob, entropy = self.policy.evaluate_actions(
-                    rollout_data.observations, actions
+                    rollout_data.observations["state"], actions
                 )
                 values = values.flatten()
                 # Normalize advantage
@@ -382,7 +400,9 @@ class L2TRL_O(OnPolicyAlgorithm):
                 )
 
                 # Compute student agent loss
-                student_actions = self.student_policy.predict(rollout_data.observations)
+                student_actions, student_values, student_log_prob = self.student_policy(
+                    rollout_data.observations["observation"]
+                )
 
                 student_loss = F.mse_loss(student_actions, actions.detach())
 
@@ -447,14 +467,14 @@ class L2TRL_O(OnPolicyAlgorithm):
             self.logger.record("train/clip_range_vf", clip_range_vf)
 
     def learn(
-        self: SelfL2TRL,
+        self: SelfL2TRL_O,
         total_timesteps: int,
         callback: MaybeCallback = None,
         log_interval: int = 1,
         tb_log_name: str = "PPO",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
-    ) -> SelfL2TRL:
+    ) -> SelfL2TRL_O:
         return super().learn(
             total_timesteps=total_timesteps,
             callback=callback,
@@ -474,18 +494,12 @@ class L2TRL_O(OnPolicyAlgorithm):
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts = [
             "policy",
-            "actor.optimizer",
-            "critic.optimizer",
+            "policy.optimizer",
             "student_policy",
-            "student_actor.optimizer",
-            "student_critic.optimizer",
+            "student_policy.optimizer",
         ]
-        if self.ent_coef_optimizer is not None:
-            saved_pytorch_variables = ["log_ent_coef"]
-            state_dicts.append("ent_coef_optimizer")
-        else:
-            saved_pytorch_variables = ["ent_coef_tensor"]
-        return state_dicts, saved_pytorch_variables
+
+        return state_dicts, []
 
     def student_predict(
         self,
@@ -535,37 +549,6 @@ class L2TRL_O(OnPolicyAlgorithm):
             observation["state"], state, episode_start, deterministic
         )
 
-    def load_replay_buffer_to(
-        self,
-        path: Union[str, pathlib.Path, io.BufferedIOBase],
-        truncate_last_traj: bool = True,
-    ):
-        """
-        Load a replay buffer from a pickle file.
-
-        :param path: Path to the pickled replay buffer.
-        :param truncate_last_traj: When using ``HerReplayBuffer`` with online sampling:
-            If set to ``True``, we assume that the last trajectory in the replay buffer was finished
-            (and truncate it).
-            If set to ``False``, we assume that we continue the same trajectory (same episode).
-        """
-        self.expert_replay_buffer = load_from_pkl(path, self.verbose)
-        assert isinstance(
-            self.expert_replay_buffer, ReplayBuffer
-        ), "The replay buffer must inherit from ReplayBuffer class"
-
-        # Backward compatibility with SB3 < 2.1.0 replay buffer
-        # Keep old behavior: do not handle timeout termination separately
-        if not hasattr(
-            self.replay_buffer, "handle_timeout_termination"
-        ):  # pragma: no cover
-            self.expert_replay_buffer.handle_timeout_termination = False
-            self.expert_replay_buffer.timeouts = np.zeros_like(
-                self.expert_replay_buffer.dones
-            )
-
-        return self.expert_replay_buffer
-
     def predict(
         self,
         observation: Union[np.ndarray, Dict[str, np.ndarray]],
@@ -586,18 +569,132 @@ class L2TRL_O(OnPolicyAlgorithm):
         :return: the model's action and the next hidden state
             (used in recurrent policies)
         """
-        # self.explorer has epsilon chance to be student
-        epsilon = self.mixture_coeff
-        if np.random.uniform() < epsilon and self.num_timesteps > 0:
-            self.explorer = "student"
-        else:
-            self.explorer = "teacher"
+        return self.policy.predict(
+            observation["state"], state, episode_start, deterministic
+        )
 
-        if self.explorer == "teacher":
-            return self.policy.predict(
-                observation["state"], state, episode_start, deterministic
+    def collect_rollouts(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        rollout_buffer: RolloutBuffer,
+        n_rollout_steps: int,
+    ) -> bool:
+        """
+        Special care for policy predict because we only want to take state as input.
+        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        The term rollout here refers to the model-free notion and should not
+        be used with the concept of rollout used in model-based RL or planning.
+
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
+            (and at the beginning and end of the rollout)
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_rollout_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
+            collected, False if callback terminated rollout prematurely.
+        """
+        assert self._last_obs is not None, "No previous observation was provided"
+        # Switch to eval mode (this affects batch norm / dropout)
+        self.policy.set_training_mode(False)
+
+        n_steps = 0
+        rollout_buffer.reset()
+        # Sample new weights for the state dependent exploration
+        if self.use_sde:
+            self.policy.reset_noise(env.num_envs)
+
+        callback.on_rollout_start()
+
+        while n_steps < n_rollout_steps:
+            if (
+                self.use_sde
+                and self.sde_sample_freq > 0
+                and n_steps % self.sde_sample_freq == 0
+            ):
+                # Sample a new noise matrix
+                self.policy.reset_noise(env.num_envs)
+
+            with th.no_grad():
+                # Convert to pytorch tensor or to TensorDict
+                obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                if self.mixture_coeff > 0.0:
+                    epsilon = self.mixture_coeff
+                    if np.random.uniform() < epsilon and self.num_timesteps > 0:
+                        actions, values, log_probs = self.student_policy(
+                            obs_tensor["observation"]
+                        )
+                    else:
+                        actions, values, log_probs = self.policy(obs_tensor["state"])
+                else:
+                    actions, values, log_probs = self.policy(obs_tensor["state"])
+            actions = actions.cpu().numpy()
+
+            # Rescale and perform action
+            clipped_actions = actions
+
+            if isinstance(self.action_space, spaces.Box):
+                if self.policy.squash_output:
+                    # Unscale the actions to match env bounds
+                    # if they were previously squashed (scaled in [-1, 1])
+                    clipped_actions = self.policy.unscale_action(clipped_actions)
+                else:
+                    # Otherwise, clip the actions to avoid out of bound error
+                    # as we are sampling from an unbounded Gaussian distribution
+                    clipped_actions = np.clip(
+                        actions, self.action_space.low, self.action_space.high
+                    )
+
+            new_obs, rewards, dones, infos = env.step(clipped_actions)
+
+            self.num_timesteps += env.num_envs
+
+            # Give access to local variables
+            callback.update_locals(locals())
+            if not callback.on_step():
+                return False
+
+            self._update_info_buffer(infos, dones)
+            n_steps += 1
+
+            if isinstance(self.action_space, spaces.Discrete):
+                # Reshape in case of discrete action
+                actions = actions.reshape(-1, 1)
+
+            # Handle timeout by bootstraping with value function
+            # see GitHub issue #633
+            for idx, done in enumerate(dones):
+                if (
+                    done
+                    and infos[idx].get("terminal_observation") is not None
+                    and infos[idx].get("TimeLimit.truncated", False)
+                ):
+                    terminal_obs = self.policy.obs_to_tensor(
+                        infos[idx]["terminal_observation"]
+                    )[0]
+                    with th.no_grad():
+                        terminal_value = self.policy.predict_values(terminal_obs["state"])[0]  # type: ignore[arg-type]
+                    rewards[idx] += self.gamma * terminal_value
+
+            rollout_buffer.add(
+                self._last_obs,  # type: ignore[arg-type]
+                actions,
+                rewards,
+                self._last_episode_starts,  # type: ignore[arg-type]
+                values,
+                log_probs,
             )
-        else:
-            return self.student_policy.predict(  # type: ignore
-                observation["observation"], state, episode_start, deterministic  # type: ignore
-            )
+            self._last_obs = new_obs  # type: ignore[assignment]
+            self._last_episode_starts = dones
+
+        with th.no_grad():
+            # Compute value for the last timestep
+            values = self.policy.predict_values(obs_as_tensor(new_obs["state"], self.device))  # type: ignore[arg-type]
+
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+
+        callback.update_locals(locals())
+
+        callback.on_rollout_end()
+
+        return True

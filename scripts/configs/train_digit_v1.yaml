@@ -1,22 +1,22 @@
 env:
   name: DigitFKHY-v1
-  n_envs: 1 #24
+  n_envs: 24
   seed: 42
 
 training:
-  total_timesteps: 1 #100_000_000
-  learning_rate: 0.0003
+  total_timesteps: 200_000_000
+  learning_rate: 0.00003
   buffer_size: 1000000
   batch_size: 256
   learning_starts: 100
-  train_freq: 1
-  gradient_steps: 1
+  train_freq: 10
+  gradient_steps: 3
   ent_coef: "auto"
   verbose: 0
 
 wandb:
   project: "CoRL2024 L2T Digit"
-  run_name: "Testing"
+  run_name: "SAC 200 million"
   group: "Digit"
   entity: "fywu"
   sync_tensorboard: True
