@@ -2,9 +2,10 @@ env:
   name: DigitFKHY-v2
   n_envs: 24
   seed: 42
+  domain_randomization_scale: 0.1
 
 training:
-  total_timesteps: 200_000_000
+  total_timesteps: 180_000_000
   learning_rate: 0.0003
   buffer_size: 1000000
   batch_size: 256
@@ -13,6 +14,7 @@ training:
   gradient_steps: 1
   ent_coef: "auto"
   verbose: 0
+  mixture_coef: 0.1
 
 wandb:
   project: "CoRL2024 L2T Digit"
@@ -24,3 +26,11 @@ wandb:
 hydra:
   job:
     chdir: False
+
+eval:
+  n_eval_episodes: 5
+  eval_freq: 10000
+  eval_render: False
+  student_n_eval_episodes: 5
+  student_eval_freq: 10000
+  student_eval_render: False

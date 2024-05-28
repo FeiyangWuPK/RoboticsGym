@@ -709,13 +709,14 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self.observation_space = spaces.Dict(
             {
                 "state": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(168,), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
                 ),
                 "observation": spaces.Box(
                     low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
                 ),
             }
         )
+
         MujocoEnv.__init__(
             self,
             os.getcwd() + "/roboticsgym/envs/xml/digit-v3-flat-noobject.xml",
@@ -974,8 +975,8 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
             max_episode_length=self.max_episode_length,
             done=self._terminal,
         )
-        if self.step_type in (StepType.TERMINAL, StepType.TIMEOUT):
-            self._step_cnt = None
+        # if self.step_type in (StepType.TERMINAL, StepType.TIMEOUT):
+        #     self._step_cnt = None
 
         info = {
             # "reward_info": rewards,
@@ -1294,9 +1295,9 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                 # self.stair_depth,
                 # rfoot_floor_contact.flatten(),  # 1
                 # lfoot_floor_contact.flatten(),  # 1
-                foot_forces,  # 3
-                rfoot_vel.flatten(),  # 3
-                lfoot_vel.flatten(),  # 3
+                # foot_forces,  # 3
+                # rfoot_vel.flatten(),  # 3
+                # lfoot_vel.flatten(),  # 3
             ]
         ).astype(np.float64)
 

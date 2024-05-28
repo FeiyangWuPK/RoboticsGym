@@ -13,17 +13,8 @@ from stable_baselines3.ppo import PPO
 
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder, VecMonitor
 from stable_baselines3.common.evaluation import evaluate_policy
-from roboticsgym.algorithms.sb3.l2t_rl import (
-    L2TRL,
-)
 
-from roboticsgym.algorithms.sb3.utilities import (
-    evaluate_student_policy,
-    evaluate_teacher_policy,
-    EvalStudentCallback,
-    EvalTeacherCallback,
-    linear_schedule,
-)
+
 import wandb
 
 from wandb.integration.sb3 import WandbCallback
@@ -55,6 +46,7 @@ from roboticsgym.algorithms.sb3.utilities import (
     EvalTeacherCallback,
     linear_schedule,
     VideoEvalCallback,
+    StudentVideoEvalCallback,
 )
 
 import hydra
@@ -315,11 +307,14 @@ def train_digit_L2TRL(cfg: DictConfig):
     import os
 
     os.environ["WANDB_SILENT"] = "true"
-
+    env_kwargs = {
+        "domain_randomization_scale": cfg.env.domain_randomization_scale,
+        "render_mode": "rgb_array",
+    }
     run = wandb.init(
         project=cfg.wandb.project,
         config=dict(cfg),  # Passes all the configurations to WandB
-        name="L2T Digit FKHY v2",
+        name=cfg.wandb.run_name,
         monitor_gym=cfg.env.name,
         # save_code=True,
         group=cfg.wandb.group,
@@ -340,13 +335,14 @@ def train_digit_L2TRL(cfg: DictConfig):
         seed=cfg.env.seed,
         vec_env_cls=SubprocVecEnv,
         # env_kwargs={"render_mode": "human"},
+        env_kwargs=env_kwargs,
     )
 
     teacher_eval_env = make_vec_env(
         cfg.env.name,
         n_envs=1,
         seed=cfg.env.seed,
-        vec_env_cls=SubprocVecEnv,
+        # vec_env_cls=SubprocVecEnv,
         # env_kwargs={"render_mode": "human"},
     )
 
@@ -356,10 +352,10 @@ def train_digit_L2TRL(cfg: DictConfig):
 
     teacher_eval_callback = EvalCallback(
         teacher_eval_env,
-        best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
-        log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # type: ignore
-        eval_freq=20000,
-        n_eval_episodes=5,
+        best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/teacher/",  # type: ignore
+        log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/teacher/",  # type: ignore
+        eval_freq=10000,
+        n_eval_episodes=1,
         callback_on_new_best=teacher_video_callback,
         deterministic=True,
         render=False,
@@ -370,11 +366,12 @@ def train_digit_L2TRL(cfg: DictConfig):
         cfg.env.name,
         n_envs=1,
         seed=cfg.env.seed,
-        vec_env_cls=SubprocVecEnv,
+        # vec_env_cls=SubprocVecEnv,
         # env_kwargs={"render_mode": "human"},
+        env_kwargs=env_kwargs,
     )
 
-    student_video_callback = VideoEvalCallback(
+    student_video_callback = StudentVideoEvalCallback(
         eval_every=1, eval_env=student_eval_env, sub_prefix="student"
     )
 
@@ -382,8 +379,8 @@ def train_digit_L2TRL(cfg: DictConfig):
         student_eval_env,
         best_model_save_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/student/",  # type: ignore
         log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/student/",  # type: ignore
-        eval_freq=20000,
-        n_eval_episodes=5,
+        eval_freq=10000,
+        n_eval_episodes=1,
         callback_on_new_best=student_video_callback,
         deterministic=True,
         render=False,
@@ -402,6 +399,14 @@ def train_digit_L2TRL(cfg: DictConfig):
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
         mixture_coeff=0,
     )
+    model.set_parameters(
+        "logs/CoRL2024 L2T Digit/L2T 200Mil/2024-05-27-16-10-00-2m8am7jg/best_model.zip"
+    )
+    # validating the new version
+    # model = PPO.load(
+    #     env=env,
+    #     path="logs/CoRL2024 L2T Digit/FKHY-v1/2024-05-25-15-27-20-su08c4uk/best_model.zip",
+    # )
 
     # Train the model
     model.learn(

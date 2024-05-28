@@ -670,10 +670,10 @@ class L2TRL_O(OnPolicyAlgorithm):
                     and infos[idx].get("TimeLimit.truncated", False)
                 ):
                     terminal_obs = self.policy.obs_to_tensor(
-                        infos[idx]["terminal_observation"]
+                        infos[idx]["terminal_observation"]["state"]
                     )[0]
                     with th.no_grad():
-                        terminal_value = self.policy.predict_values(terminal_obs["state"])[0]  # type: ignore[arg-type]
+                        terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
                     rewards[idx] += self.gamma * terminal_value
 
             rollout_buffer.add(
