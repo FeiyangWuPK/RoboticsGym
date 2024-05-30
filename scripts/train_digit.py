@@ -397,10 +397,10 @@ def train_digit_L2TRL(cfg: DictConfig):
         learning_rate=cfg.training.learning_rate,
         batch_size=cfg.training.batch_size,
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
-        mixture_coeff=0,
+        mixture_coeff=0.2,
     )
     model.set_parameters(
-        "logs/CoRL2024 L2T Digit/L2T 200Mil/2024-05-27-16-10-00-2m8am7jg/best_model.zip"
+        "logs/CoRL2024 L2T Digit/L2T 200Mil/2024-05-27-19-25-59-1usag0g1/teacher/best_model.zip"
     )
     # validating the new version
     # model = PPO.load(

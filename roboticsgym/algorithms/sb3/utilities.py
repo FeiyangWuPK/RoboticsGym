@@ -796,7 +796,7 @@ class VideoEvalCallback(BaseCallback):
 
         obs = self.eval_env.reset()
         for i in range(2000):
-            action = self.model.predict(obs, deterministic=False)[0]
+            action = self.model.predict(obs, deterministic=True)[0]
             obs, reward, done, info = self.eval_env.step(action)
             pixels = self.eval_env.render().transpose(2, 0, 1)
             video.append(pixels)
@@ -823,7 +823,7 @@ class StudentVideoEvalCallback(VideoEvalCallback):
 
         obs = self.eval_env.reset()
         for i in range(2000):
-            action = self.model.student_predict(obs, deterministic=False)[0]
+            action = self.model.student_predict(obs, deterministic=True)[0]
             obs, reward, done, info = self.eval_env.step(action)
             pixels = self.eval_env.render()
             pixels = pixels.transpose(2, 0, 1)
