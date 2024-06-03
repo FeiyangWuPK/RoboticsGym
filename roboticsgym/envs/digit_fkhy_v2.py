@@ -712,7 +712,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                     low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
                 ),
                 "observation": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(124,), dtype=np.float64
                 ),
             }
         )
@@ -1307,7 +1307,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                 self.digit_qvel[:3],  # 3
                 self.digit_qpos[self.p_index],  # 20
                 self.digit_qvel[self.v_index],  # 20
-                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                # self.xpos[self.endeffector_index].reshape((12)),  # 12
                 self.ref_qpos[self._step_cnt, :3],  # 3
                 self.ref_qvel[self._step_cnt, :3],  # 3
                 self.ref_a_pos[self._step_cnt],  # 20
