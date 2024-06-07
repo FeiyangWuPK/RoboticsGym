@@ -172,13 +172,13 @@ class DigitEnvConfig(BaseConfig):
 
     class vis_record(ConfigObj):
         visualize = False  # should set to false when training
-        record = True  # should visualize true
+        record = False  # should visualize true
         record_fps = 15
         record_env = 0  # -1 if you don't wanna recording. recording should always be done in env 0
         snapshot_gap = 10
 
     class domain_randomization(ConfigObj):
-        is_true = True
+        is_true = False
         action_delay = 0.002  # TODO: isn't it to large?
         # friction_noise = [0.4, 2.0] # scaling
         kp_noise = [0.9, 1.1]

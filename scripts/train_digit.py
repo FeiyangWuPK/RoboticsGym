@@ -319,7 +319,7 @@ def train_digit_L2TRL(cfg: DictConfig):
         # save_code=True,
         group=cfg.wandb.group,
         sync_tensorboard=cfg.wandb.sync_tensorboard,
-        # entity=cfg.wandb.entity,
+        entity=cfg.wandb.entity,
         # mode="offline",
         # notes="new mujoco, new ref traj",
     )
@@ -381,7 +381,7 @@ def train_digit_L2TRL(cfg: DictConfig):
         log_path=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/student/",  # type: ignore
         eval_freq=10000,
         n_eval_episodes=1,
-        callback_on_new_best=student_video_callback,
+        # callback_on_new_best=student_video_callback,
         deterministic=True,
         render=False,
         verbose=1,
@@ -394,10 +394,11 @@ def train_digit_L2TRL(cfg: DictConfig):
         env,
         student_policy="L2TPolicy",
         verbose=cfg.training.verbose,
-        learning_rate=cfg.training.learning_rate,
+        # learning_rate=cfg.training.learning_rate,
+        learning_rate=linear_schedule(5e-3),
         batch_size=cfg.training.batch_size,
         tensorboard_log=f"logs/{run.project}/{run.name}/{start_time}-{run.id}/",  # Log to WandB directory # type: ignore
-        mixture_coeff=0.2,
+        mixture_coeff=cfg.training.mixture_coeff,
     )
     # model.set_parameters(
     #     "logs/CoRL2024 L2T Digit/L2T 200Mil and Tuning/2024-05-28-19-35-52-irww016o/student/best_model.zip"
@@ -417,5 +418,3 @@ def train_digit_L2TRL(cfg: DictConfig):
             [teacher_eval_callback, student_eval_callback, wandb_callback]
         ),
     )
-
-    run.finish()  # type: ignore

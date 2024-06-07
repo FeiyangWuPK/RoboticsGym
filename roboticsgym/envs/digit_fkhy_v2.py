@@ -709,10 +709,10 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         self.observation_space = spaces.Dict(
             {
                 "state": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(136,), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(104,), dtype=np.float64
                 ),
                 "observation": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(124,), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(104,), dtype=np.float64
                 ),
             }
         )
@@ -979,7 +979,6 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
         #     self._step_cnt = None
 
         info = {
-            # "reward_info": rewards,
             "tot_reward": tot_reward,
             "done": self.step_type is StepType.TERMINAL
             or self.step_type is StepType.TIMEOUT,
@@ -1282,13 +1281,13 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                 self.digit_qvel[:3],  # 3
                 self.digit_qpos[self.p_index],  # 20
                 self.digit_qvel[self.v_index],  # 20
-                self.xpos[self.endeffector_index].reshape((12)),  # 12
+                # self.xpos[self.endeffector_index].reshape((12)),  # 12
                 self.ref_qpos[self._step_cnt, :3],  # 3
                 self.ref_qvel[self._step_cnt, :3],  # 3
                 self.ref_a_pos[self._step_cnt],  # 20
                 self.ref_a_vel[self._step_cnt],  # 20
                 self.ref_ee_pos[self._step_cnt, :],  # 12
-                self.action.copy(),  # 20
+                # self.action.copy(),  # 20
                 # self.joint_pos_hist_obs,
                 # self.joint_vel_hist_obs,
                 # self.stair_height,
@@ -1313,7 +1312,7 @@ class DigitEnvBase(MujocoEnv, gym.utils.EzPickle):
                 self.ref_a_pos[self._step_cnt],  # 20
                 self.ref_a_vel[self._step_cnt],  # 20
                 self.ref_ee_pos[self._step_cnt, :],  # 12
-                self.action.copy(),  # 20
+                # self.action.copy(),  # 20
             ]
         )
 

@@ -6,21 +6,21 @@ env:
 
 training:
   total_timesteps: 100_000_000
-  learning_rate: 0.00003
+  learning_rate: 0.003
   buffer_size: 1000000
-  batch_size: 256
+  batch_size: 64
   learning_starts: 100
   train_freq: 1
   gradient_steps: 1
   ent_coef: "auto"
   verbose: 0
-  mixture_coef: 0.1
+  mixture_coeff: 0.1
 
 wandb:
-  project: "CoRL2024 L2T Digit"
-  run_name: "L2T 200Mil and Tuning"
+  project: "L2T Digit"
+  run_name: "L2T simplified"
   group: "Digit"
-  entity: "fywu"
+  entity: "rl-digit"
   sync_tensorboard: True
 
 hydra:
